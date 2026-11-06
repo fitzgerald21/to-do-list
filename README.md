@@ -27,6 +27,7 @@ The task changes to **Waiting · Jordan**. A dated line goes into its progress l
 - **Task fields**: status (to do, in progress, waiting on someone, blocked, done), waiting on, priority, effort and urgency (each 1–10, blank unless you or the AI set one), tags, links, notes, progress log and due date.
 - **Sub-tasks**: real tasks that live under a task, nest to any depth and show up in every view with their own status, due date and so on. Finishing or deleting a task does the same to its sub-tasks (with Undo).
 - **Drag and drop** in Lists, the sidebar, Board and Mind map, with a mouse or a finger. Drop a task on a list to move it, on the middle of another task to make it a sub-task, or on a task's top or bottom edge to place it there. Lists and sub-lists move the same way, even between Work and Personal. On a phone, drag by the ⠿ handle, or press and hold anywhere else. Moves offer Undo, and Esc cancels a drag.
+- **Add from the mind map**: tap ＋ on a list or on Work/Personal to add a task or sub-list, on a task to add a sub-task, or use **＋ Add** and pick the place.
 - **Colors**: every top-level list gets its own color, which its sub-lists and tasks share across all views, including the mind map. Tap a list's dot to choose another.
 - **Priority score** from 0 to 100: `priority × urgency × (11 − effort) ÷ 10`. Important, urgent and easy tasks rise to the top.
 - **Views**

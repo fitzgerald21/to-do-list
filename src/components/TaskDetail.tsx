@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { score, scoreColor } from "../lib/score";
-import { childrenOf, listPath, taskDescendantIds, uid } from "../lib/tree";
+import { placeOptions, taskDescendantIds, uid } from "../lib/tree";
 import { deleteTask, dropItem, newTask, patchTask, saveTask, useData } from "../state/store";
 import { toast } from "../state/ui";
-import { SPACES, STATUSES, type List, type Status, type Task } from "../types";
+import { STATUSES, type Status, type Task } from "../types";
 import { Composer } from "./Composer";
 import { RepeatEditor } from "./RepeatEditor";
 
@@ -62,17 +62,7 @@ export function TaskDetail({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Every place a task can live: "Work", "Work › Transformation", …
-  const places: { value: string; label: string }[] = [];
-  for (const sp of SPACES) {
-    places.push({ value: `${sp.id}:`, label: sp.name });
-    const walk = (parent: string | null) =>
-      childrenOf(lists, parent, sp.id).forEach((l: List) => {
-        places.push({ value: `${sp.id}:${l.id}`, label: listPath(lists, l.id, sp.id).join(" › ") + (l.closed ? " (closed)" : "") });
-        walk(l.id);
-      });
-    walk(null);
-  }
+  const places = placeOptions(lists);
 
   const moveTo = (space: string, listId: string | null) =>
     void dropItem({ kind: "task", id: task.id }, listId ? { kind: "list", id: listId, pos: "inside" } : { kind: "space", id: space, pos: "inside" });

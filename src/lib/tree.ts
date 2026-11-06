@@ -75,6 +75,21 @@ export function listPath(lists: List[], id: string | null, space: Space): string
   return names;
 }
 
+/** Every place something can live: "Work", "Work › Transformation", … Values are "space:listId". */
+export function placeOptions(lists: List[]): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const sp of SPACES) {
+    out.push({ value: `${sp.id}:`, label: sp.name });
+    const walk = (parent: string | null) =>
+      childrenOf(lists, parent, sp.id).forEach((l) => {
+        out.push({ value: `${sp.id}:${l.id}`, label: listPath(lists, l.id, sp.id).join(" › ") + (l.closed ? " (closed)" : "") });
+        walk(l.id);
+      });
+    walk(null);
+  }
+  return out;
+}
+
 export function pathLabel(lists: List[], task: Pick<Task, "listId" | "space">): string {
   return listPath(lists, task.listId, task.space).join(" › ");
 }

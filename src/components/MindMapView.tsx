@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { score, scoreColor, sortTasks } from "../lib/score";
-import { childrenOf, listColor, placeColor } from "../lib/tree";
+import { childrenOf, listColor, placeColor, placeOptions } from "../lib/tree";
 import { dropAttrs, registerPanner, startDrag } from "../state/dnd";
-import { useData } from "../state/store";
+import { newList, newTask, saveList, saveTask, useData, useSettings } from "../state/store";
 import { SPACES, STATUSES, type List, type Space, type Task } from "../types";
 import type { ViewProps } from "./ListView";
 
@@ -25,9 +25,94 @@ const NODE_H = 28;
 
 const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
+/** Where the add panel will put things: "space:listId" like placeOptions, or a task to add sub-tasks under. */
+type AddTarget = { place: string } | { taskId: string };
+
+function AddPanel({
+  target,
+  setTarget,
+  onAdded,
+  onClose,
+}: {
+  target: AddTarget;
+  setTarget: (t: AddTarget) => void;
+  onAdded: (foldKey: string) => void;
+  onClose: () => void;
+}) {
+  const { lists, tasks } = useData();
+  const [text, setText] = useState("");
+  const [added, setAdded] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const parent = "taskId" in target ? tasks.find((t) => t.id === target.taskId) : null;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => input.current?.focus(), [JSON.stringify(target)]);
+
+  const add = (kind: "task" | "list") => {
+    const title = text.trim();
+    if (!title) return input.current?.focus();
+    if (parent) {
+      void saveTask(newTask({ title, space: parent.space, listId: parent.listId, parentId: parent.id }));
+    } else if ("place" in target) {
+      const [space, listId] = target.place.split(":") as [Space, string];
+      if (kind === "task") void saveTask(newTask({ title, space, listId: listId || null }));
+      else void saveList(newList({ name: title, space, parentId: listId || null }));
+      onAdded(listId || space);
+    }
+    setText("");
+    setAdded(`Added “${title}”`);
+    input.current?.focus();
+  };
+
+  return (
+    <form
+      className="map-add-panel"
+      onSubmit={(e) => {
+        e.preventDefault();
+        add("task");
+      }}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div className="map-add-row">
+        <label className="map-add-where">
+          Add to
+          <select
+            value={parent ? "task" : "place" in target ? target.place : ""}
+            onChange={(e) => e.target.value !== "task" && setTarget({ place: e.target.value })}
+          >
+            {parent && <option value="task">Sub-task of “{trunc(parent.title, 30)}”</option>}
+            {placeOptions(lists).map((pl) => (
+              <option key={pl.value} value={pl.value}>
+                {pl.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="x" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </div>
+      <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Name" aria-label="Name" />
+      <div className="map-add-row">
+        <span className="muted small grow">{added}</span>
+        {!parent && (
+          <button type="button" className="btn" onClick={() => add("list")}>
+            Add list
+          </button>
+        )}
+        <button type="submit" className="btn primary">
+          {parent ? "Add sub-task" : "Add task"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
   const { lists } = useData();
+  const { defaultSpace } = useSettings();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [adding, setAdding] = useState<AddTarget | null>(null);
   const [view, setView] = useState({ x: 40, y: 40, k: 1 });
   const svgRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -201,8 +286,29 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
         <button className="icon-btn" onClick={fit}>
           ⤢
         </button>
-        <span className="muted small">Tap a list to fold it · tap a task to open · drag to move (on a phone, press and hold first)</span>
+        <button
+          className="btn map-add-btn"
+          aria-expanded={!!adding}
+          onClick={() =>
+            setAdding(
+              adding
+                ? null
+                : { place: scope.kind === "list" ? `${lists.find((l) => l.id === scope.id)?.space ?? defaultSpace}:${scope.id}` : `${scope.kind === "space" ? scope.space : defaultSpace}:` },
+            )
+          }
+        >
+          ＋ Add
+        </button>
+        <span className="muted small">Tap a list to fold it · tap a task to open · ＋ adds under it · drag to move (on a phone, press and hold first)</span>
       </div>
+      {adding && (
+        <AddPanel
+          target={adding}
+          setTarget={setAdding}
+          onClose={() => setAdding(null)}
+          onAdded={(key) => setCollapsed((c) => ({ ...c, [key]: false }))}
+        />
+      )}
       <svg
         ref={svgRef}
         className="map-svg"
@@ -256,9 +362,29 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
                   {n.hidden ? ` (+${n.hidden})` : ""}
                 </text>
                 {t && s !== null && (
-                  <text x={NODE_W - 8} y={NODE_H / 2 + 4.5} textAnchor="end" className="map-score" fill={scoreColor(s)}>
+                  <text x={NODE_W - 14} y={NODE_H / 2 + 4.5} textAnchor="end" className="map-score" fill={scoreColor(s)}>
                     {s}
                   </text>
+                )}
+                {n.kind !== "root" && (
+                  <g
+                    className="map-add"
+                    role="button"
+                    aria-label={`Add under ${n.label}`}
+                    transform={`translate(${NODE_W},${NODE_H / 2})`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const home = n.kind === "list" ? `${lists.find((l) => l.id === n.key)?.space}:${n.key}` : `${n.key}:`;
+                      setAdding(n.kind === "task" ? { taskId: n.key } : { place: home });
+                    }}
+                  >
+                    <circle className="map-add-hit" r={16} />
+                    <circle className="map-add-dot" r={9} />
+                    <text textAnchor="middle" y={4.5}>
+                      +
+                    </text>
+                  </g>
                 )}
               </g>
             );
