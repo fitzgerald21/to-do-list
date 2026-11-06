@@ -62,6 +62,40 @@ export interface UpdateEntry {
   raw?: string;
 }
 
+/**
+ * How a task repeats. Examples:
+ *  every 3 days                 { freq: "day", interval: 3 }
+ *  Mon/Wed/Fri                  { freq: "week", interval: 1, weekdays: [1,3,5] }
+ *  15th of every month          { freq: "month", interval: 1, monthMode: "day", monthDay: 15 }
+ *  2nd Tuesday every quarter    { freq: "month", interval: 3, monthMode: "weekday", nth: 2, weekday: 2 }
+ *  last day of the month        { freq: "month", interval: 1, monthMode: "last" }
+ *  every Mar 3                  { freq: "year", interval: 1, month: 2, monthMode: "day", monthDay: 3 }
+ *  2 weeks after I finish it    { freq: "week", interval: 2, from: "completion" }
+ */
+export interface Repeat {
+  freq: "day" | "week" | "month" | "year";
+  /** Every N days/weeks/months/years. */
+  interval: number;
+  /** freq "week": days of the week, 0 = Sunday … 6 = Saturday. Empty = same weekday as the due date. */
+  weekdays?: number[];
+  /** freq "month"/"year": on a day number, on the Nth weekday, or on the last day. */
+  monthMode?: "day" | "weekday" | "last";
+  monthDay?: number;
+  /** 1–4, or -1 for "last". */
+  nth?: number;
+  weekday?: number;
+  /** freq "year": 0 = January … 11 = December. */
+  month?: number;
+  /** Count from the due date (fixed schedule) or from when you complete it. */
+  from: "due" | "completion";
+  /** Stop after this date (YYYY-MM-DD). */
+  until?: string | null;
+  /** Stop after this many completions in total. */
+  count?: number | null;
+  /** How many times it's been completed so far. */
+  done?: number;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -82,6 +116,8 @@ export interface Task {
   subtasks: Subtask[];
   updates: UpdateEntry[];
   dueDate: string | null; // YYYY-MM-DD
+  /** Recurring: checking it off rolls it forward to the next date. */
+  repeat?: Repeat | null;
   order: number;
   createdAt: number;
   updatedAt: number;

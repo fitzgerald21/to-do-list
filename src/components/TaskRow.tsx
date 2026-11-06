@@ -1,4 +1,5 @@
 import { score, scoreColor } from "../lib/score";
+import { describeRepeat } from "../lib/recurrence";
 import { pathLabel } from "../lib/tree";
 import { patchTask, useData } from "../state/store";
 import { STATUSES, type Task } from "../types";
@@ -71,6 +72,7 @@ export function TaskRow({
           {showPath && <span className="path">{pathLabel(lists, task)}</span>}
           <StatusChip task={task} />
           {due && <span className={`chip due ${due.cls}`}>📅 {due.text}</span>}
+          {task.repeat && <RepeatChip task={task} />}
           {task.subtasks.length > 0 && (
             <span className="chip">
               ☑ {subDone}/{task.subtasks.length}
@@ -99,5 +101,14 @@ export function TaskRow({
         </span>
       </div>
     </div>
+  );
+}
+
+export function RepeatChip({ task }: { task: Task }) {
+  if (!task.repeat) return null;
+  return (
+    <span className="chip" title={describeRepeat(task.repeat, task.dueDate)}>
+      🔁
+    </span>
   );
 }

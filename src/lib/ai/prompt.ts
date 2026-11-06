@@ -1,4 +1,5 @@
 import { SPACES, STATUSES, type List, type Meta, type Space, type Task } from "../../types";
+import { describeRepeat } from "../recurrence";
 import { isEffectivelyClosed, listPath, outline, pathLabel } from "../tree";
 
 /** Kept byte-identical between calls so providers can cache it. */
@@ -29,6 +30,17 @@ Action kinds:
    - list_path: the topic, e.g. ["Work", "Transformation"]; ["Work"] or ["Personal"] for a whole space; [] for facts about the user themselves (their job, team, family). A topic that doesn't exist yet is created.
    - context: ONLY the new facts, as short bullet lines ("- Kathy: exec sponsor, wants a weekly status email"). Don't repeat what the background already says. Keep names, roles, dates, numbers.
    - It can sit alongside create_task / update_task actions when the user also mentions to-dos. Don't turn background facts into tasks.
+
+Repeating tasks - set repeat only when the user says something recurs (or, on update_task, changes/stops it); otherwise null:
+- freq + interval: "every day/daily" -> day,1; "every other day" -> day,2; "weekly" -> week,1; "every other week/biweekly" -> week,2; "monthly" -> month,1; "quarterly/every 3 months" -> month,3; "twice a year" -> month,6; "yearly/annually/every birthday" -> year,1.
+- weekdays (week only, 0=Sun 1=Mon ... 6=Sat): "every Monday and Thursday" -> [1,4]; "weekdays" -> [1,2,3,4,5]; "weekends" -> [0,6]. [] when not given.
+- month_mode for month/year: "day" + month_day ("on the 15th" -> 15, "on the 1st" -> 1); "weekday" + nth + weekday ("2nd Tuesday" -> nth 2, weekday 2; "last Friday" -> nth -1, weekday 5); "last" for the last day of the month. null for day/week.
+- month (year only, 1-12): "every March 3rd" -> month 3, month_mode "day", month_day 3; "4th Thursday of November" -> month 11, month_mode "weekday", nth 4, weekday 4.
+- from: "completion" when it should count from when they finish it ("3 days after I do it", "2 weeks after the last one", "every so often" -> interval from context); otherwise "due".
+- until (YYYY-MM-DD) for "until June" / "through the end of the year"; count for "for 10 weeks" / "6 times". null otherwise.
+- Also set due_date to the first occurrence when it's clear ("every Monday starting next week" -> next Monday). If not, leave due_date null and the app picks the next matching day.
+- To stop a task repeating ("stop repeating", "this doesn't recur anymore"), use update_task with repeat.freq "none".
+- Marking a repeating task done (status "done") is fine: the app moves it to the next date automatically.
 
 Scoring - set only when the user expresses it, otherwise null (the app defaults to 5):
 - priority: "top/high/most important" -> 8-9, "critical/number one" -> 10, "low priority/someday" -> 2-3, "priority 7" -> 7.
@@ -86,6 +98,7 @@ export function buildUserMessage(utterance: string, ctx: PromptContext): string 
     .map((t) => {
       const bits = [`${t.id} | ${pathLabel(ctx.lists, t)} | ${t.title} | ${t.status}`];
       if (t.waitingOn) bits.push(`waiting on ${t.waitingOn}`);
+      if (t.repeat) bits.push(`repeats: ${describeRepeat(t.repeat, t.dueDate)}`);
       return bits.join(" | ");
     });
 
@@ -97,7 +110,7 @@ id: ${t.id}
 title: ${t.title}
 where: ${pathLabel(ctx.lists, t)}
 status: ${STATUSES.find((s) => s.id === t.status)?.label}${t.waitingOn ? ` (waiting on ${t.waitingOn})` : ""}
-priority ${t.priority}, effort ${t.effort}, urgency ${t.urgency}${t.dueDate ? `, due ${t.dueDate}` : ""}
+priority ${t.priority}, effort ${t.effort}, urgency ${t.urgency}${t.dueDate ? `, due ${t.dueDate}` : ""}${t.repeat ? `\nrepeats: ${describeRepeat(t.repeat, t.dueDate)}` : ""}
 tags: ${t.tags.join(", ") || "none"}
 checklist: ${t.subtasks.map((s) => `[${s.done ? "x" : " "}] ${s.text}`).join("; ") || "none"}
 notes: ${t.notes || "none"}

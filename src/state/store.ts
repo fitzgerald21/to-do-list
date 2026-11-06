@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { Backend, Snapshot } from "../lib/storage/backend";
+import { prettyDay, rollForward } from "../lib/recurrence";
 import { descendantIds, uid } from "../lib/tree";
+import { toast } from "./ui";
 import { DEFAULT_SETTINGS, EMPTY_META, type List, type Meta, type Place, type Settings, type Space, type Task } from "../types";
 
 // ---------------------------------------------------------------- data store
@@ -127,6 +129,17 @@ export async function setContext(p: Place, text: string) {
 export async function patchTask(id: string, patch: Partial<Task>) {
   const cur = snap.tasks.find((t) => t.id === id);
   if (!cur) return;
+  // Checking off a repeating task rolls it on to its next date instead.
+  if (patch.status === "done" && cur.status !== "done" && cur.repeat) {
+    const rolled = rollForward({ ...cur, ...patch });
+    if (rolled) {
+      await saveTask(rolled);
+      toast(`🔁 Done. Next: ${prettyDay(rolled.dueDate!)}`, {
+        action: { label: "Undo", run: () => void saveTask(cur) },
+      });
+      return;
+    }
+  }
   const next: Task = { ...cur, ...patch, updatedAt: now() };
   if (patch.status) {
     if (patch.status === "done" && cur.status !== "done") next.completedAt = now();

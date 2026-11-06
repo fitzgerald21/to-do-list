@@ -23,6 +23,7 @@ The task changes to **Waiting · Jordan**. A dated line goes into its progress l
 - **Screenshots and pasted text**: tap 📎 (or paste / drag an image in) to attach screenshots. Long scrolling screenshots are cut into readable pieces. Paste whole emails or chat logs into the box. Works in the main bar and inside a task ("here's Jordan's reply").
 - **Background docs**: one for **About me**, one each for **Work** and **Personal**, and one for every list. Talk or type, then **✨ Organize**. You can also add to them from the main bar ("for Transformation, Lisa is taking over the vendor side"). The AI uses them to route to-dos and to fix mis-heard names.
 - **Updates by voice**: mark tasks done, say who you're waiting on, move tasks, add notes. This works from the main bar or from inside a task.
+- **Repeating tasks**: every N days/weeks/months/years; specific weekdays (Mon/Wed/Fri, weekdays, every other Tuesday); a day of the month (clamped for short months), the Nth or last weekday ("2nd Tuesday", "last Friday"), or the last day of the month; yearly on a date or "4th Thursday of November"; counted from the due date or from when you finish it ("3 months after I last changed the filter"); ending never, on a date, or after N times. Say it ("pay rent on the 1st of every month") or pick it in the task panel. Checking one off moves it to its next date, resets its checklist and logs the completion (with Undo).
 - **Task fields**: status (to do, in progress, waiting on someone, blocked, done), waiting on, priority, effort and urgency (each 1–10), tags, links, checklist, notes, progress log and due date.
 - **Priority score** from 0 to 100: `priority × urgency × (11 − effort) ÷ 10`. Important, urgent and easy tasks rise to the top.
 - **Views**
@@ -69,6 +70,7 @@ src/
   lib/ai/models.ts        model lists + prices
   lib/ai/interpret.ts     run the AI, preview, apply with undo
   lib/ai/fallback.ts      no-key offline parser
+  lib/recurrence.ts       repeat rules: next date, presets, plain-English labels
   lib/images.ts           shrink / slice screenshots before sending
   components/ContextPanel background ("About") doc editor
   lib/speech.ts           continuous dictation (Web Speech API)
@@ -87,4 +89,4 @@ src/
 | GTD ("Waiting For" list) | Track what you're waiting on | Waiting status, plus the Focus → Waiting on view |
 | MindNode / XMind | Mind map | Mind map view |
 
-Ideas for later: an Android share-sheet target (share a screenshot straight into the app), PDF attachments, recurring tasks, reminders and notifications, a Today/Upcoming calendar view, sharing a list with someone, a weekly AI review ("what's stale, what's waiting too long"), and Siri Shortcut / Android share-sheet capture.
+Ideas for later: an Android share-sheet target (share a screenshot straight into the app), PDF attachments, reminders and notifications, a Today/Upcoming calendar view, sharing a list with someone, a weekly AI review ("what's stale, what's waiting too long"), and Siri Shortcut / Android share-sheet capture.

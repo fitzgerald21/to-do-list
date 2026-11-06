@@ -13,6 +13,7 @@ import {
 } from "../../state/store";
 import type { List, Meta, Place, Space, Task } from "../../types";
 import { toModelImages, type Attachment } from "../images";
+import { describeRepeat, firstDue, rollForward } from "../recurrence";
 import { clamp } from "../score";
 import { allTags, listPath, resolvePath, uid } from "../tree";
 import { parseOffline } from "./fallback";
@@ -112,6 +113,8 @@ export function describe(a: AiAction, defaultSpace: Space, focusTaskId?: string 
     ].filter(Boolean);
     if (scores.length) d.push(scores.join(" · "));
     if (a.due_date) d.push(`Due ${a.due_date}`);
+    if (a.repeat) d.push(`🔁 ${describeRepeat(a.repeat, a.due_date)}`);
+    if (a.repeat_off) d.push("🔁 Stop repeating");
     if (a.tags.length) d.push(a.tags.map((t) => `#${t}`).join(" "));
     a.links.forEach((l) => d.push(`🔗 ${l.label || l.url}`));
     a.subtasks.forEach((s) => d.push(`☐ ${s}`));
@@ -209,6 +212,10 @@ export async function applyResult(
         dueDate: a.due_date,
         updates: a.progress_update ? [{ id: uid(), at: Date.now(), text: a.progress_update, raw: opts.raw }] : [],
       });
+      if (a.repeat) {
+        t.repeat = a.repeat;
+        if (!t.dueDate) t.dueDate = firstDue(a.repeat);
+      }
       if (t.status === "done") t.completedAt = Date.now();
       await saveTask(t);
       createdTasks.push(t.id);
@@ -250,7 +257,14 @@ export async function applyResult(
         next.space = place.space;
         next.listId = place.listId;
       }
-      await saveTask(next);
+      if (a.repeat_off) next.repeat = null;
+      else if (a.repeat) {
+        next.repeat = { ...a.repeat, done: cur.repeat?.done ?? 0 };
+        if (!next.dueDate) next.dueDate = firstDue(a.repeat);
+      }
+      // "Done" on a repeating task moves it to its next date.
+      const rolled = next.status === "done" && cur.status !== "done" ? rollForward(next) : null;
+      await saveTask(rolled ?? next);
       touched.push(next.id);
     } else if (a.kind === "update_context" && a.context) {
       let place = contextPlace(a.list_path, settings.defaultSpace).place;

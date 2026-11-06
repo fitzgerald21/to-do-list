@@ -50,7 +50,7 @@ function memoryBackend(): Backend {
 const action = (p: Partial<AiAction>): AiAction => ({
   kind: "create_task", task_id: null, list_path: [], title: null, notes: null, progress_update: null,
   status: null, waiting_on: null, priority: null, effort: null, urgency: null, tags: [], links: [],
-  due_date: null, subtasks: [], complete_subtasks: [], context: null, ...p,
+  due_date: null, subtasks: [], complete_subtasks: [], context: null, repeat: null, repeat_off: false, ...p,
 });
 
 describe("score", () => {
@@ -210,5 +210,23 @@ describe("tree + apply", () => {
     expect(msg.indexOf("## Work > Transformation")).toBeLessThan(msg.indexOf("## Work > Vendors"));
     expect(msg).toContain("2 image piece(s) are attached");
     expect(msg).toContain("just the attached image(s)");
+  });
+
+  it("creates a repeating task and rolls it forward when the AI marks it done", async () => {
+    const rep = { freq: "week" as const, interval: 1, weekdays: [1], from: "due" as const };
+    await applyResult({ reply: "", actions: [action({ title: "Weekly report", repeat: rep })] }, { raw: "weekly report every monday" });
+    const t = getData().tasks[0];
+    expect(t.repeat).toMatchObject(rep);
+    expect(new Date(t.dueDate + "T12:00").getDay()).toBe(1);
+    const due = t.dueDate;
+    const r = await applyResult({ reply: "", actions: [action({ kind: "update_task", task_id: t.id, status: "done" })] }, { raw: "did the report" });
+    const after = getData().tasks[0];
+    expect(after.status).toBe("todo");
+    expect(after.dueDate! > due!).toBe(true);
+    expect(after.repeat!.done).toBe(1);
+    await r.undo();
+    expect(getData().tasks[0].dueDate).toBe(due);
+    await applyResult({ reply: "", actions: [action({ kind: "update_task", task_id: t.id, repeat_off: true })] }, { raw: "stop repeating" });
+    expect(getData().tasks[0].repeat).toBeNull();
   });
 });

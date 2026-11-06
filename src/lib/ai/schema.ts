@@ -1,4 +1,4 @@
-import type { Status } from "../../types";
+import type { Repeat, Status } from "../../types";
 
 export type ActionKind = "create_task" | "update_task" | "create_list" | "delete_task" | "update_context";
 
@@ -29,6 +29,10 @@ export interface AiAction {
   complete_subtasks: string[];
   /** update_context: new background facts to add to the topic's About doc. */
   context: string | null;
+  /** Make it recurring (or change how it recurs). */
+  repeat: Repeat | null;
+  /** update_task: stop it repeating. */
+  repeat_off: boolean;
 }
 
 export interface AiResult {
@@ -54,7 +58,7 @@ export const RESULT_SCHEMA = {
         required: [
           "kind", "task_id", "list_path", "title", "notes", "progress_update", "status",
           "waiting_on", "priority", "effort", "urgency", "tags", "links", "due_date",
-          "subtasks", "complete_subtasks", "context",
+          "subtasks", "complete_subtasks", "context", "repeat",
         ],
         properties: {
           kind: { type: "string", enum: ["create_task", "update_task", "create_list", "delete_task", "update_context"] },
@@ -82,6 +86,24 @@ export const RESULT_SCHEMA = {
           subtasks: strArr,
           complete_subtasks: strArr,
           context: nullable("string"),
+          repeat: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            required: ["freq", "interval", "weekdays", "month_mode", "month_day", "nth", "weekday", "month", "from", "until", "count"],
+            properties: {
+              freq: { type: "string", enum: ["day", "week", "month", "year", "none"] },
+              interval: { type: "integer" },
+              weekdays: { type: "array", items: { type: "integer" } },
+              month_mode: { type: ["string", "null"], enum: ["day", "weekday", "last", null] },
+              month_day: nullable("integer"),
+              nth: nullable("integer"),
+              weekday: nullable("integer"),
+              month: nullable("integer"),
+              from: { type: "string", enum: ["due", "completion"] },
+              until: nullable("string"),
+              count: nullable("integer"),
+            },
+          },
         },
       },
     },
@@ -114,6 +136,7 @@ export function normalizeResult(raw: unknown): AiResult {
     if (!KINDS.has(kind)) continue;
     const status = str(r.status);
     const due = str(r.due_date);
+    const rep = normalizeRepeat(r.repeat);
     actions.push({
       kind: kind as ActionKind,
       task_id: str(r.task_id),
@@ -140,9 +163,50 @@ export function normalizeResult(raw: unknown): AiResult {
       subtasks: strs(r.subtasks),
       complete_subtasks: strs(r.complete_subtasks),
       context: str(r.context),
+      repeat: rep === "off" ? null : rep,
+      repeat_off: rep === "off",
     });
   }
   return { actions, reply: str(o.reply) ?? "" };
+}
+
+const int = (v: unknown, lo: number, hi: number): number | null => {
+  const n = typeof v === "string" ? parseInt(v, 10) : v;
+  return typeof n === "number" && Number.isFinite(n) && n >= lo && n <= hi ? Math.round(n) : null;
+};
+
+/** Model's repeat object (months 1-12) → app Repeat (months 0-11). "off" = stop repeating. */
+export function normalizeRepeat(v: unknown): Repeat | "off" | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const freq = String(o.freq ?? "");
+  if (freq === "none") return "off";
+  if (!["day", "week", "month", "year"].includes(freq)) return null;
+  const r: Repeat = {
+    freq: freq as Repeat["freq"],
+    interval: int(o.interval, 1, 365) ?? 1,
+    from: o.from === "completion" ? "completion" : "due",
+  };
+  const wds = Array.isArray(o.weekdays) ? [...new Set(o.weekdays.map((x) => int(x, 0, 6)).filter((x): x is number => x !== null))].sort() : [];
+  if (freq === "week" && wds.length) r.weekdays = wds;
+  if (freq === "month" || freq === "year") {
+    const mode = o.month_mode;
+    const nth = o.nth === -1 || o.nth === "-1" ? -1 : int(o.nth, 1, 4);
+    const wd = int(o.weekday, 0, 6);
+    if (mode === "last") r.monthMode = "last";
+    else if (mode === "weekday" && nth !== null && wd !== null) Object.assign(r, { monthMode: "weekday", nth, weekday: wd });
+    else {
+      const day = int(o.month_day, 1, 31);
+      if (day !== null) Object.assign(r, { monthMode: "day", monthDay: day });
+    }
+    const m = int(o.month, 1, 12);
+    if (freq === "year" && m !== null) r.month = m - 1;
+  }
+  const until = str(o.until);
+  if (until && /^\d{4}-\d{2}-\d{2}$/.test(until)) r.until = until;
+  const count = int(o.count, 1, 10000);
+  if (count) r.count = count;
+  return r;
 }
 
 /** Reply shape for "Organize" on a background doc. */

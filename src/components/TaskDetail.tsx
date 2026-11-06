@@ -5,6 +5,7 @@ import { deleteTask, patchTask, saveTask, useData } from "../state/store";
 import { toast } from "../state/ui";
 import { SPACES, STATUSES, type List, type Status, type Task } from "../types";
 import { Composer } from "./Composer";
+import { RepeatEditor } from "./RepeatEditor";
 
 /** Text input that saves on blur, so typing doesn't spam the database. */
 function useDraft(value: string, save: (v: string) => void) {
@@ -87,7 +88,7 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
             <p className="muted small">
               Say what's going on — “waiting on Jordan for the report, Michael said Thursday” — and it'll update status, notes and the log.
             </p>
-            <Composer compact placeholder="What's the latest on this?" opts={() => ({ focusTaskId: task.id })} />
+            <Composer compact placeholder="What's the latest?" opts={() => ({ focusTaskId: task.id })} />
           </section>
 
           <div className="field-grid">
@@ -128,6 +129,8 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
               <input type="date" value={task.dueDate ?? ""} onChange={(e) => p({ dueDate: e.target.value || null })} />
             </label>
           </div>
+
+          <RepeatEditor task={task} onChange={(patch) => p(patch)} />
 
           <section className="scores">
             <div className="score-big" style={{ color: scoreColor(s), borderColor: scoreColor(s) }}>

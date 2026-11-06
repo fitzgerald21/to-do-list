@@ -18,6 +18,8 @@ const blank = (): AiAction => ({
   subtasks: [],
   complete_subtasks: [],
   context: null,
+  repeat: null,
+  repeat_off: false,
 });
 
 const WORDS: Record<string, number> = {
@@ -54,6 +56,21 @@ export function parseOffline(input: string, today = new Date()): AiResult {
     const d = new Date(today);
     if (m[1].toLowerCase() === "tomorrow") d.setDate(d.getDate() + 1);
     a.due_date = d.toISOString().slice(0, 10);
+  });
+  // Simple repeats: "daily", "every day", "every 2 weeks", "every monday", "weekly", "monthly", "every weekday"
+  const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  grab(/\b(?:repeat\s+)?(daily|weekly|monthly|yearly|every\s+(?:other\s+)?(?:(\d+|two|three|four|five|six)\s+)?(day|week|month|year|weekday)s?|every\s+((?:sun|mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?)day))\b/i, (mm) => {
+    const w = mm[1].toLowerCase();
+    if (mm[4]) {
+      const d = DAYS.findIndex((x) => x.startsWith(mm[4].toLowerCase().slice(0, 3)));
+      a.repeat = { freq: "week", interval: 1, weekdays: [d], from: "due" };
+      return;
+    }
+    const simple: Record<string, "day" | "week" | "month" | "year"> = { daily: "day", weekly: "week", monthly: "month", yearly: "year" };
+    if (simple[w]) return void (a.repeat = { freq: simple[w], interval: 1, from: "due" });
+    if (mm[3]?.toLowerCase() === "weekday") return void (a.repeat = { freq: "week", interval: 1, weekdays: [1, 2, 3, 4, 5], from: "due" });
+    const n = /other/.test(w) ? 2 : mm[2] ? (toNum(mm[2]) ?? 1) : 1;
+    a.repeat = { freq: mm[3].toLowerCase() as "day", interval: n, from: "due" };
   });
   // tags: "#foo" or "tag(ged) (it|with) foo"
   let m: RegExpMatchArray | null;

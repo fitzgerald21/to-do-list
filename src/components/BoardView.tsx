@@ -4,7 +4,7 @@ import { pathLabel } from "../lib/tree";
 import { patchTask, useData } from "../state/store";
 import { STATUSES, type Status } from "../types";
 import type { ViewProps } from "./ListView";
-import { ScoreBadge, dueLabel } from "./TaskRow";
+import { RepeatChip, ScoreBadge, dueLabel } from "./TaskRow";
 
 /** Kanban by status. Drag cards on desktop, or use the status menu on phone. */
 export function BoardView({ tasks, onOpen, showDone }: ViewProps) {
@@ -60,6 +60,7 @@ export function BoardView({ tasks, onOpen, showDone }: ViewProps) {
                     {t.updates.length > 0 && <div className="small muted clamp2">📝 {t.updates[t.updates.length - 1].text}</div>}
                     <div className="card-foot">
                       {due && <span className={`chip due ${due.cls}`}>📅 {due.text}</span>}
+                      <RepeatChip task={t} />
                       {t.tags.slice(0, 3).map((x) => (
                         <span key={x} className="chip tag">
                           #{x}
