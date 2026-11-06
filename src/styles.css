@@ -225,6 +225,32 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0.5); } 50% { box-shadow: 0 0 0 10px rgb(244 63 94 / 0); } }
 .hint { font-size: 12px; color: var(--muted); }
 .composer.compact .mic, .composer.compact .send { width: 40px; height: 40px; font-size: 16px; }
+.composer textarea { max-height: 40vh; }
+.attach { flex: none; width: 38px; height: 46px; display: grid; place-items: center; font-size: 19px; border-radius: 10px; color: var(--muted); }
+.attach:hover { background: var(--panel-2); }
+.attach:disabled { opacity: 0.45; }
+.composer.compact .attach { height: 40px; width: 34px; font-size: 16px; }
+.composer.dragging { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 14px; }
+.attachments { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.attachments .hint { flex: 1 1 160px; }
+.thumb { position: relative; width: 56px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.thumb-x { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 50%; background: rgb(0 0 0 / 0.65); color: #fff; font-size: 11px; display: grid; place-items: center; }
+.thumb-badge { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; text-align: center; background: rgb(0 0 0 / 0.6); color: #fff; padding: 1px 0; }
+
+/* ---------- background ("About") docs */
+.about-card { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0 2px; color: var(--muted); font-size: 13.5px; }
+.about-card.has { border-style: solid; color: var(--text); }
+.about-card:hover { border-color: var(--accent); }
+.about-card .about-icon { font-size: 18px; line-height: 1.2; }
+.about-card .about-text { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.about-card .about-go { color: var(--accent); white-space: nowrap; font-size: 13px; }
+.about-doc { width: 100%; min-height: 40vh; resize: vertical; line-height: 1.45; font-size: 14.5px; padding: 12px 14px; border-radius: 12px; }
+.about-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.about-tools .grow { flex: 1; }
+.about-explain { font-size: 13.5px; color: var(--muted); margin: 0; line-height: 1.45; }
+.about-note { font-size: 13px; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-radius: 10px; padding: 8px 10px; }
+.group-head .about-dot { font-size: 12px; opacity: 0.8; }
 
 .review { background: var(--panel-2); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px; box-shadow: var(--shadow); max-height: 50vh; overflow: auto; }
 .review ul { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

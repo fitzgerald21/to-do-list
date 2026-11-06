@@ -24,10 +24,23 @@ export interface List {
   color?: string;
   /** "Closed" lists are hidden from the main views but kept. */
   closed: boolean;
+  /** Background on this topic ("who's involved, what it's for") that the AI reads. */
+  context?: string;
   order: number;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Somewhere in the tree: everything, a whole space, or one list. */
+export type Place = { kind: "all" } | { kind: "space"; space: Space } | { kind: "list"; id: string };
+
+/** Data that isn't a list or task: background docs for "About me" and the two spaces. */
+export interface Meta {
+  context: { all?: string; work?: string; personal?: string };
+  updatedAt: number;
+}
+
+export const EMPTY_META: Meta = { context: {}, updatedAt: 0 };
 
 export interface Link {
   url: string;

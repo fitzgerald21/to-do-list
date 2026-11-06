@@ -1,46 +1,87 @@
 import {
   deleteTask,
+  getContext,
   getData,
   getSettings,
   newList,
   newTask,
   removeListOnly,
   saveList,
+  saveMeta,
   saveTask,
+  setContext,
 } from "../../state/store";
-import type { List, Space, Task } from "../../types";
+import type { List, Meta, Place, Space, Task } from "../../types";
+import { toModelImages, type Attachment } from "../images";
 import { clamp } from "../score";
 import { allTags, listPath, resolvePath, uid } from "../tree";
 import { parseOffline } from "./fallback";
-import { buildUserMessage, SYSTEM_PROMPT } from "./prompt";
-import { callModel } from "./providers";
-import { normalizeResult, type AiAction, type AiResult } from "./schema";
+import { buildContextMessage, buildUserMessage, CONTEXT_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompt";
+import { AiError, callModel } from "./providers";
+import { CONTEXT_SCHEMA, normalizeResult, RESULT_SCHEMA, type AiAction, type AiResult } from "./schema";
 
 export interface InterpretOptions {
   focusTaskId?: string | null;
   viewing?: string[] | null;
 }
 
-/** Ask the selected AI to turn what you said into actions. */
-export async function interpret(utterance: string, opts: InterpretOptions = {}): Promise<AiResult & { offline: boolean }> {
+const hasKey = () => {
+  const s = getSettings();
+  return !!s.keys[s.provider]?.trim();
+};
+
+/** Ask the selected AI to turn what you said (plus any screenshots) into actions. */
+export async function interpret(
+  utterance: string,
+  opts: InterpretOptions = {},
+  attachments: Attachment[] = [],
+): Promise<AiResult & { offline: boolean }> {
   const settings = getSettings();
-  const { lists, tasks } = getData();
-  if (!settings.keys[settings.provider]?.trim()) {
+  const { lists, tasks, meta } = getData();
+  if (!hasKey()) {
+    if (attachments.length) throw new AiError("Reading screenshots needs an AI key. Add one in Settings.");
     const r = parseOffline(utterance);
     // Offline: drop into the list you're looking at when none was named.
     if (opts.viewing?.length) r.actions.forEach((a) => !a.list_path.length && (a.list_path = [...opts.viewing!]));
     return { ...r, offline: true };
   }
+  const images = toModelImages(attachments);
   const user = buildUserMessage(utterance, {
     lists,
     tasks,
+    meta,
+    imageCount: images.length,
     tags: allTags(tasks),
     defaultSpace: settings.defaultSpace,
     focusTask: opts.focusTaskId ? tasks.find((t) => t.id === opts.focusTaskId) : null,
     viewing: opts.viewing,
   });
-  const raw = await callModel(settings, SYSTEM_PROMPT, user);
+  const raw = await callModel(settings, { system: SYSTEM_PROMPT, user, images, schema: RESULT_SCHEMA, schemaName: "todo_actions" });
   return { ...normalizeResult(raw), offline: false };
+}
+
+/** "Organize": merge a rambling spiel into a topic's background doc. */
+export async function organizeContext(topic: string, existing: string, added: string): Promise<{ context: string; reply: string }> {
+  if (!hasKey()) throw new AiError("Organizing needs an AI key. Add one in Settings.");
+  const raw = (await callModel(getSettings(), {
+    system: CONTEXT_SYSTEM_PROMPT,
+    user: buildContextMessage(topic, existing, added),
+    schema: CONTEXT_SCHEMA,
+    schemaName: "background_doc",
+  })) as { context?: unknown; reply?: unknown };
+  const context = typeof raw?.context === "string" ? raw.context.trim() : "";
+  if (!context) throw new AiError("The AI didn't return a document. Try again.");
+  return { context, reply: typeof raw.reply === "string" ? raw.reply : "" };
+}
+
+/** Where an update_context action points: [] = About me, ["Work"] = the space, deeper = a list. */
+function contextPlace(path: string[], defaultSpace: Space): { place: Place | null; label: string; isNew: boolean } {
+  if (!path.length) return { place: { kind: "all" }, label: "About me", isNew: false };
+  const { lists } = getData();
+  const r = resolvePath(lists, path, defaultSpace);
+  const label = [...listPath(lists, r.listId, r.space), ...r.missing].join(" › ");
+  if (r.missing.length) return { place: null, label, isNew: true };
+  return { place: r.listId ? { kind: "list", id: r.listId } : { kind: "space", space: r.space }, label, isNew: false };
 }
 
 // ------------------------------------------------------------ previewing
@@ -97,6 +138,15 @@ export function describe(a: AiAction, defaultSpace: Space, focusTaskId?: string 
       if (a.list_path.length) d.unshift(`Move → ${where(a.list_path)}`);
       return { icon: "✏️", headline: t ? t.title : "Unknown task", details: d, invalid: t ? undefined : "Couldn't find that task" };
     }
+    case "update_context": {
+      const c = contextPlace(a.list_path, defaultSpace);
+      return {
+        icon: "📄",
+        headline: `Background for ${c.label}${c.isNew ? "  (new list)" : ""}`,
+        details: (a.context ?? "").split("\n").filter((x) => x.trim()),
+        invalid: a.context ? undefined : "Nothing to add",
+      };
+    }
     case "delete_task": {
       const t = tasks.find((x) => x.id === a.task_id);
       return { icon: "🗑️", headline: t ? `Delete “${t.title}”` : "Delete unknown task", details: [], invalid: t ? undefined : "Couldn't find that task" };
@@ -133,6 +183,8 @@ export async function applyResult(
   const createdLists: string[] = [];
   const createdTasks: string[] = [];
   const before = new Map<string, Task>();
+  const beforeLists = new Map<string, List>();
+  let beforeMeta: Meta | null = null;
   const touched: string[] = [];
 
   for (const [i, a] of result.actions.entries()) {
@@ -200,6 +252,18 @@ export async function applyResult(
       }
       await saveTask(next);
       touched.push(next.id);
+    } else if (a.kind === "update_context" && a.context) {
+      let place = contextPlace(a.list_path, settings.defaultSpace).place;
+      if (!place) {
+        const made = await ensurePath(a.list_path, settings.defaultSpace, createdLists);
+        place = made.listId ? { kind: "list", id: made.listId } : { kind: "space", space: made.space };
+      }
+      if (place.kind === "list") {
+        const l = getData().lists.find((x) => x.id === (place as { id: string }).id);
+        if (l && !beforeLists.has(l.id) && !createdLists.includes(l.id)) beforeLists.set(l.id, l);
+      } else if (!beforeMeta) beforeMeta = getData().meta;
+      const cur = getContext(place).trimEnd();
+      await setContext(place, cur ? `${cur}\n${a.context}` : a.context);
     } else if (a.kind === "delete_task" && a.task_id) {
       const cur = getData().tasks.find((x) => x.id === a.task_id);
       if (!cur) continue;
@@ -213,6 +277,8 @@ export async function applyResult(
     undo: async () => {
       for (const id of createdTasks) await deleteTask(id);
       for (const t of before.values()) await saveTask(t);
+      for (const l of beforeLists.values()) await saveList(l);
+      if (beforeMeta) await saveMeta(beforeMeta);
       for (const id of createdLists.reverse()) await removeListOnly(id);
     },
   };

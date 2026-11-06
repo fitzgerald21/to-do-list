@@ -3,7 +3,8 @@ import type { Scope } from "../App";
 import { SORTS, sortTasks, type SortKey } from "../lib/score";
 import { childrenOf } from "../lib/tree";
 import { newTask, patchList, saveTask, useData } from "../state/store";
-import { SPACES, type List, type Space, type Task } from "../types";
+import { SPACES, type List, type Place, type Space, type Task } from "../types";
+import { AboutCard } from "./ContextPanel";
 import { promptNewList } from "./Sidebar";
 import { TaskRow } from "./TaskRow";
 
@@ -66,7 +67,13 @@ function QuickAdd({ space, listId }: { space: Space; listId: string | null }) {
   );
 }
 
-export function ListView({ scope, tasks, onOpen, onTag }: ViewProps & { onTag: (t: string) => void }) {
+export function ListView({
+  scope,
+  tasks,
+  onOpen,
+  onTag,
+  onAbout,
+}: ViewProps & { onTag: (t: string) => void; onAbout: (p: Place) => void }) {
   const { lists } = useData();
   const [sort, setSort] = useSort("list", "score");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -95,8 +102,16 @@ export function ListView({ scope, tasks, onOpen, onTag }: ViewProps & { onTag: (
             {l.closed && "🔒 "}
             {l.name}
           </h3>
+          {l.context?.trim() && (
+            <button className="about-dot" title="Background (what the AI knows about this)" onClick={() => onAbout({ kind: "list", id: l.id })}>
+              📄
+            </button>
+          )}
           <span className="count">{countUnder(l)}</span>
           <div className="group-actions">
+            <button className="link small" onClick={() => onAbout({ kind: "list", id: l.id })}>
+              about
+            </button>
             <button className="link small" onClick={() => void promptNewList(l.space, l.id)}>
               ＋ sub-list
             </button>
@@ -149,6 +164,7 @@ export function ListView({ scope, tasks, onOpen, onTag }: ViewProps & { onTag: (
         <SortSelect value={sort} onChange={setSort} />
       </div>
       {noData && scope.kind !== "list" && <Welcome />}
+      <AboutCard place={scope} onOpen={onAbout} />
       {scope.kind === "all" && SPACES.map((s) => renderSpace(s.id, true))}
       {scope.kind === "space" && renderSpace(scope.space, false)}
       {scope.kind === "list" &&

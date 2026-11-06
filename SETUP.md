@@ -2,6 +2,14 @@
 
 You can try the app right away with no setup (it saves to your browser only). To get it on your phone **and** computer with your data synced, do the Firebase steps once (about 10 minutes, free tier is plenty).
 
+## The quick way: GitHub Pages
+
+The app is published at **<https://fitzgerald21.github.io/to-do-list/>**. Every push to `main` (or `claude/voice-todo-app`) rebuilds it via `.github/workflows/pages.yml`, which publishes to the `gh-pages` branch.
+
+Out of the box it saves to each browser only. To sync your phone and computer, do steps 1 and 2 below, then in GitHub go to **Settings → Secrets and variables → Actions → Variables** and add the six `VITE_FIREBASE_…` values as repository variables (same names as in `.env.example`). Re-run the workflow (Actions → Deploy to GitHub Pages → Run workflow). Then in Firebase, **Authentication → Settings → Authorized domains → Add** `fitzgerald21.github.io`.
+
+> On the iPhone home-screen app, use **email/password** sign-in. Google sign-in on github.io needs a redirect that Safari blocks from home-screen apps.
+
 ## 0. Run it locally
 
 You need [Node.js](https://nodejs.org) 20 or newer.
@@ -45,7 +53,7 @@ Put your project id in `.firebaserc` too (replace `YOUR-FIREBASE-PROJECT-ID`).
 
 Restart `npm run dev` — you'll now see a sign-in screen.
 
-## 3. Deploy so your phone can reach it
+## 3. Deploy so your phone can reach it (Firebase Hosting, optional if you use GitHub Pages)
 
 ```bash
 npm install -g firebase-tools

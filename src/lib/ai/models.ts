@@ -8,6 +8,8 @@ export interface ModelOption {
   /** USD per 1M output tokens. */
   outPrice: number | null;
   context?: number | null;
+  /** Can read images (screenshots). undefined = unknown. */
+  vision?: boolean;
 }
 
 /** Anthropic's /v1/models doesn't return prices, so these are filled in by hand. */
@@ -31,13 +33,13 @@ const CLAUDE_FALLBACK: ModelOption[] = [
   ["claude-sonnet-5-5", "Claude Sonnet 5.5"],
   ["claude-opus-5-5", "Claude Opus 5.5"],
   ["claude-fable-5-1", "Claude Fable 5.1"],
-].map(([id, name]) => ({ id, name, inPrice: CLAUDE_PRICES[id][0], outPrice: CLAUDE_PRICES[id][1] }));
+].map(([id, name]) => ({ id, name, inPrice: CLAUDE_PRICES[id][0], outPrice: CLAUDE_PRICES[id][1], vision: true }));
 
 const CACHE_MS = 12 * 60 * 60 * 1000;
 
 function cached(key: string): ModelOption[] | null {
   try {
-    const raw = localStorage.getItem(`braindump:models:${key}`);
+    const raw = localStorage.getItem(`braindump:models:v2:${key}`);
     if (!raw) return null;
     const { at, models } = JSON.parse(raw);
     return Date.now() - at < CACHE_MS ? models : null;
@@ -48,7 +50,7 @@ function cached(key: string): ModelOption[] | null {
 
 function store(key: string, models: ModelOption[]) {
   try {
-    localStorage.setItem(`braindump:models:${key}`, JSON.stringify({ at: Date.now(), models }));
+    localStorage.setItem(`braindump:models:v2:${key}`, JSON.stringify({ at: Date.now(), models }));
   } catch {
     /* ignore */
   }
@@ -77,7 +79,7 @@ async function fetchClaude(apiKey: string): Promise<ModelOption[]> {
     for await (const m of client.models.list({ limit: 100 })) {
       if (m.lifecycle === "retired") continue;
       const p = CLAUDE_PRICES[m.id];
-      out.push({ id: m.id, name: m.display_name, inPrice: p?.[0] ?? null, outPrice: p?.[1] ?? null, context: m.max_input_tokens });
+      out.push({ id: m.id, name: m.display_name, inPrice: p?.[0] ?? null, outPrice: p?.[1] ?? null, context: m.max_input_tokens, vision: true });
     }
     return out.length ? out : CLAUDE_FALLBACK;
   } catch {
@@ -100,6 +102,7 @@ async function fetchOpenRouter(): Promise<ModelOption[]> {
       inPrice: perMillion(m.pricing?.prompt),
       outPrice: perMillion(m.pricing?.completion),
       context: m.context_length ?? null,
+      vision: ((m.architecture?.input_modalities as string[] | undefined) ?? []).includes("image"),
     }));
 }
 

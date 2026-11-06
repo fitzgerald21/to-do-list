@@ -12,10 +12,16 @@ Open any task and **talk about it**:
 
 The task changes to **Waiting · Jordan**. A dated line goes into its progress log ("Waiting on Jordan for the report. Michael will send the data Thu Nov 12."), and a follow-up step is added to its checklist. Whatever you actually said is kept alongside the log entry.
 
+**Paste or screenshot anything.** Paste an email, or tap 📎 and pick a screenshot of a text thread. The AI works out what you need to do (or who you're waiting on), files each item in the right topic, and puts the key details and who it came from in the notes.
+
+**Give each topic a background doc.** Open a topic's 📄 **Background** and ramble about it: what it is, who's involved, nicknames. Tap **✨ Organize** and it becomes a tidy brief. The AI reads these briefs every time, so "send Cathy the numbers" lands in Transformation because the brief says Kathy is its sponsor.
+
 ## Features
 
 - **Two main branches, Work and Personal**, with lists and sub-lists nested as deep as you like. Lists can be closed (archived) and reopened.
 - **Capture by voice or typing**, on your phone or computer. You can add several to-dos at once, name the list ("under X", "add to X") and say the priority, effort, urgency, tags, due date ("next Tuesday"), links or checklist steps. New tasks go into the list you're currently looking at unless you name another.
+- **Screenshots and pasted text**: tap 📎 (or paste / drag an image in) to attach screenshots. Long scrolling screenshots are cut into readable pieces. Paste whole emails or chat logs into the box. Works in the main bar and inside a task ("here's Jordan's reply").
+- **Background docs**: one for **About me**, one each for **Work** and **Personal**, and one for every list. Talk or type, then **✨ Organize**. You can also add to them from the main bar ("for Transformation, Lisa is taking over the vendor side"). The AI uses them to route to-dos and to fix mis-heard names.
 - **Updates by voice**: mark tasks done, say who you're waiting on, move tasks, add notes. This works from the main bar or from inside a task.
 - **Task fields**: status (to do, in progress, waiting on someone, blocked, done), waiting on, priority, effort and urgency (each 1–10), tags, links, checklist, notes, progress log and due date.
 - **Priority score** from 0 to 100: `priority × urgency × (11 − effort) ÷ 10`. Important, urgent and easy tasks rise to the top.
@@ -29,6 +35,7 @@ The task changes to **Waiting · Jordan**. A dated line goes into its progress l
 - **AI provider choice**: Claude (default **Haiku 5.5** at **high** effort), **OpenRouter** or **DeepInfra**. The model picker loads each provider's live model list with prices per 1M tokens and lets you search and sort by price.
 - **Firebase sync** (Firestore and Auth) across your devices. It works offline and catches up when you reconnect. Without Firebase it runs in local-only mode.
 - **Installable PWA**: add it to your home screen and it runs full-screen like a native app.
+- **Hosted on GitHub Pages** at <https://fitzgerald21.github.io/to-do-list/>, redeployed on every push (see `.github/workflows/pages.yml`).
 - **Backup**: export and import everything as JSON.
 
 ## Quick start
@@ -62,6 +69,8 @@ src/
   lib/ai/models.ts        model lists + prices
   lib/ai/interpret.ts     run the AI, preview, apply with undo
   lib/ai/fallback.ts      no-key offline parser
+  lib/images.ts           shrink / slice screenshots before sending
+  components/ContextPanel background ("About") doc editor
   lib/speech.ts           continuous dictation (Web Speech API)
   lib/score.ts, tree.ts   score/sorting, list tree + fuzzy path matching
   components/             UI
@@ -78,4 +87,4 @@ src/
 | GTD ("Waiting For" list) | Track what you're waiting on | Waiting status, plus the Focus → Waiting on view |
 | MindNode / XMind | Mind map | Mind map view |
 
-Ideas for later: recurring tasks, reminders and notifications, a Today/Upcoming calendar view, sharing a list with someone, a weekly AI review ("what's stale, what's waiting too long"), and Siri Shortcut / Android share-sheet capture.
+Ideas for later: an Android share-sheet target (share a screenshot straight into the app), PDF attachments, recurring tasks, reminders and notifications, a Today/Upcoming calendar view, sharing a list with someone, a weekly AI review ("what's stale, what's waiting too long"), and Siri Shortcut / Android share-sheet capture.

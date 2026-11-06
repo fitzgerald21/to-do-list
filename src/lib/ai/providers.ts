@@ -1,5 +1,6 @@
 import type { ProviderId, Settings } from "../../types";
-import { extractJson, RESULT_SCHEMA } from "./schema";
+import type { ImageInput } from "../images";
+import { extractJson } from "./schema";
 
 export const PROVIDERS: { id: ProviderId; name: string; keyUrl: string; keyHint: string }[] = [
   { id: "anthropic", name: "Claude (Anthropic)", keyUrl: "https://platform.claude.com/settings/keys", keyHint: "sk-ant-…" },
@@ -9,15 +10,27 @@ export const PROVIDERS: { id: ProviderId; name: string; keyUrl: string; keyHint:
 
 export class AiError extends Error {}
 
-/** Send the system + user prompt to whichever provider is selected; return parsed JSON. */
-export async function callModel(settings: Settings, system: string, user: string): Promise<unknown> {
+export interface ModelRequest {
+  system: string;
+  user: string;
+  /** Screenshots / photos, sent before the text. */
+  images?: ImageInput[];
+  /** JSON schema the reply must follow. */
+  schema: object;
+  schemaName: string;
+}
+
+/** Send the request to whichever provider is selected; return parsed JSON. */
+export async function callModel(settings: Settings, req: ModelRequest): Promise<unknown> {
   const key = settings.keys[settings.provider]?.trim();
   if (!key) throw new AiError(`Add your ${PROVIDERS.find((p) => p.id === settings.provider)!.name} API key in Settings.`);
   const model = settings.models[settings.provider]?.trim();
   if (!model) throw new AiError("Pick a model in Settings.");
-  if (settings.provider === "anthropic") return callClaude(key, model, settings.effort, system, user);
-  return callOpenAICompatible(settings.provider, key, model, system, user);
+  if (settings.provider === "anthropic") return callClaude(key, model, settings.effort, req);
+  return callOpenAICompatible(settings.provider, key, model, req);
 }
+
+const NO_VISION = "This model can't read images. In Settings, pick a model marked 👁 (all Claude models can).";
 
 // ----------------------------------------------------------------- Claude
 
@@ -25,8 +38,7 @@ async function callClaude(
   apiKey: string,
   model: string,
   effort: Settings["effort"],
-  system: string,
-  user: string,
+  { system, user, images = [], schema }: ModelRequest,
 ): Promise<unknown> {
   // The key lives only in your browser (and, if you opt in, your own Firestore doc),
   // so calling the API directly from the page is fine for a personal app.
@@ -41,12 +53,24 @@ async function callClaude(
         model,
         max_tokens: 16000,
         system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: user }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              // Images first, each preceded by its label, then the instructions.
+              ...images.flatMap((im) => [
+                { type: "text" as const, text: im.label },
+                { type: "image" as const, source: { type: "base64" as const, media_type: im.mediaType, data: im.data } },
+              ]),
+              { type: "text" as const, text: user },
+            ],
+          },
+        ],
         ...(useEffort || useFormat
           ? {
               output_config: {
                 ...(useEffort ? { effort } : {}),
-                ...(useFormat ? { format: { type: "json_schema" as const, schema: RESULT_SCHEMA as unknown as Record<string, unknown> } } : {}),
+                ...(useFormat ? { format: { type: "json_schema" as const, schema: schema as Record<string, unknown> } } : {}),
               },
             }
           : {}),
@@ -69,6 +93,7 @@ async function callClaude(
           useFormat = false;
           continue;
         }
+        if (images.length && msg.includes("image")) throw new AiError(`Claude couldn't read that image: ${e.message}`);
         throw new AiError(`Claude rejected the request: ${e.message}`);
       }
       if (e instanceof Anthropic.AuthenticationError) throw new AiError("Your Anthropic API key was rejected. Check it in Settings.");
@@ -96,12 +121,20 @@ async function callOpenAICompatible(
   provider: Exclude<ProviderId, "anthropic">,
   key: string,
   model: string,
-  system: string,
-  user: string,
+  { system, user, images = [], schema, schemaName }: ModelRequest,
 ): Promise<unknown> {
   // Not every model supports strict JSON schemas, so step down until one works.
   const formats: Fmt[] = provider === "openrouter" ? ["json_schema", "json_object", "none"] : ["json_object", "none"];
-  const sys = `${system}\n\nRespond with ONLY the JSON object, no prose. JSON schema:\n${JSON.stringify(RESULT_SCHEMA)}`;
+  const sys = `${system}\n\nRespond with ONLY the JSON object, no prose. JSON schema:\n${JSON.stringify(schema)}`;
+  const content = images.length
+    ? [
+        ...images.flatMap((im) => [
+          { type: "text", text: im.label },
+          { type: "image_url", image_url: { url: `data:${im.mediaType};base64,${im.data}` } },
+        ]),
+        { type: "text", text: user },
+      ]
+    : user;
   let lastErr = "";
   for (const fmt of formats) {
     const body: Record<string, unknown> = {
@@ -109,11 +142,11 @@ async function callOpenAICompatible(
       max_tokens: 8000,
       messages: [
         { role: "system", content: sys },
-        { role: "user", content: user },
+        { role: "user", content },
       ],
     };
     if (fmt === "json_schema")
-      body.response_format = { type: "json_schema", json_schema: { name: "todo_actions", strict: true, schema: RESULT_SCHEMA } };
+      body.response_format = { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } };
     if (fmt === "json_object") body.response_format = { type: "json_object" };
 
     let res: Response;
@@ -132,9 +165,11 @@ async function callOpenAICompatible(
     }
     if (res.status === 401 || res.status === 403) throw new AiError(`Your ${provider} API key was rejected. Check it in Settings.`);
     if (res.status === 429) throw new AiError(`Rate limited by ${provider}. Wait a moment and try again.`);
+    if (res.status === 404 && images.length) throw new AiError(NO_VISION);
     if (res.status === 402) throw new AiError(`${provider} says your account is out of credits.`);
     if (!res.ok) {
       lastErr = (await res.text().catch(() => "")).slice(0, 300);
+      if (images.length && /image|vision|modalit|multimodal/i.test(lastErr)) throw new AiError(NO_VISION);
       if (res.status === 400 || res.status === 422) continue; // try a looser format
       throw new AiError(`${provider} error ${res.status}: ${lastErr}`);
     }

@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { connect, getData, newList, saveList } from "../state/store";
+import { connect, getContext, getData, newList, saveList, setContext } from "../state/store";
 import type { Backend, Snapshot } from "./storage/backend";
-import { applyResult } from "./ai/interpret";
+import { applyResult, describe as describeAction } from "./ai/interpret";
 import { parseOffline } from "./ai/fallback";
 import { buildUserMessage } from "./ai/prompt";
 import { extractJson, normalizeResult, type AiAction } from "./ai/schema";
 import { score, sortTasks } from "./score";
 import { listPath, resolvePath } from "./tree";
-import type { Task } from "../types";
+import { EMPTY_META, type Task } from "../types";
 
 function memoryBackend(): Backend {
-  let data: Snapshot = { lists: [], tasks: [] };
+  let data: Snapshot = { lists: [], tasks: [], meta: EMPTY_META };
   const subs = new Set<(s: Snapshot) => void>();
   const emit = () => subs.forEach((f) => f({ ...data }));
   return {
@@ -36,6 +36,10 @@ function memoryBackend(): Backend {
       data = { ...data, tasks: data.tasks.filter((x) => x.id !== id) };
       emit();
     },
+    async putMeta(m) {
+      data = { ...data, meta: m };
+      emit();
+    },
     async loadSyncedSettings() {
       return null;
     },
@@ -46,7 +50,7 @@ function memoryBackend(): Backend {
 const action = (p: Partial<AiAction>): AiAction => ({
   kind: "create_task", task_id: null, list_path: [], title: null, notes: null, progress_update: null,
   status: null, waiting_on: null, priority: null, effort: null, urgency: null, tags: [], links: [],
-  due_date: null, subtasks: [], complete_subtasks: [], ...p,
+  due_date: null, subtasks: [], complete_subtasks: [], context: null, ...p,
 });
 
 describe("score", () => {
@@ -164,5 +168,47 @@ describe("tree + apply", () => {
     expect(msg).toContain("- Transformation");
     expect(msg).toContain("currently viewing: Work > Transformation");
     expect(msg).toMatch(/today: \w+day/);
+  });
+
+  it("adds background to a topic from speech, creating it if needed, and undoes", async () => {
+    await saveList(newList({ name: "Transformation", space: "work", context: "Summary: ERP rollout." }));
+    const t = getData().lists[0];
+    const result = {
+      reply: "Noted.",
+      actions: [
+        action({ kind: "update_context", list_path: ["Transformation"], context: "- Kathy: exec sponsor" }),
+        action({ kind: "update_context", list_path: ["Personal", "House"], context: "- Dana: contractor" }),
+        action({ kind: "update_context", list_path: [], context: "- I run ops at Acme" }),
+        action({ kind: "create_task", list_path: ["Transformation"], title: "Send Kathy the deck" }),
+      ],
+    };
+    expect(describeAction(result.actions[0], "work").headline).toBe("Background for Work › Transformation");
+    expect(describeAction(result.actions[1], "work").headline).toContain("(new list)");
+    const receipt = await applyResult(result, { raw: "spiel" });
+    expect(getContext({ kind: "list", id: t.id })).toBe("Summary: ERP rollout.\n- Kathy: exec sponsor");
+    const house = getData().lists.find((l) => l.name === "House")!;
+    expect(house.space).toBe("personal");
+    expect(house.context).toBe("- Dana: contractor");
+    expect(getContext({ kind: "all" })).toBe("- I run ops at Acme");
+    expect(getData().tasks).toHaveLength(1);
+    await receipt.undo();
+    expect(getContext({ kind: "list", id: t.id })).toBe("Summary: ERP rollout.");
+    expect(getContext({ kind: "all" })).toBe("");
+    expect(getData().lists.map((l) => l.name)).toEqual(["Transformation"]);
+    expect(getData().tasks).toHaveLength(0);
+  });
+
+  it("puts background docs and attachments in the prompt, viewed topic first", async () => {
+    await saveList(newList({ name: "Vendors", space: "work", context: "- Jordan handles data" }));
+    await saveList(newList({ name: "Transformation", space: "work", context: "- Kathy: sponsor" }));
+    await setContext({ kind: "space", space: "personal" }, "- Wife: Sam");
+    const msg = buildUserMessage("", {
+      lists: getData().lists, tasks: [], tags: [], defaultSpace: "work", meta: getData().meta,
+      viewing: ["Work", "Transformation"], imageCount: 2,
+    });
+    expect(msg).toContain("## Personal\n- Wife: Sam");
+    expect(msg.indexOf("## Work > Transformation")).toBeLessThan(msg.indexOf("## Work > Vendors"));
+    expect(msg).toContain("2 image piece(s) are attached");
+    expect(msg).toContain("just the attached image(s)");
   });
 });

@@ -23,7 +23,7 @@ export function AuthScreen() {
   return (
     <div className="auth">
       <div className="auth-card">
-        <img src="/icon.svg" alt="" width={64} height={64} />
+        <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width={64} height={64} />
         <h1>Brain Dump</h1>
         <p className="muted">Say it, and it's on your list. Sign in to sync your phone and computer.</p>
         <button className="btn primary wide" disabled={busy} onClick={() => run(async () => (await fb()).signInGoogle())}>

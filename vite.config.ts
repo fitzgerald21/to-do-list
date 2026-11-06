@@ -2,7 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+// GitHub Pages serves the app from /<repo>/; Firebase Hosting and `npm run dev` from /.
+const base = process.env.BASE_PATH || "/";
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -15,7 +19,8 @@ export default defineConfig({
         theme_color: "#0f172a",
         background_color: "#0f172a",
         display: "standalone",
-        start_url: "/",
+        start_url: base,
+        scope: base,
         icons: [
           { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
         ],

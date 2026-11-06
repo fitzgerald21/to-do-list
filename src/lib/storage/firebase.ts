@@ -23,7 +23,7 @@ import {
   setDoc,
   type Firestore,
 } from "firebase/firestore";
-import type { List, Task } from "../../types";
+import { EMPTY_META, type List, type Meta, type Task } from "../../types";
 import type { Backend, Snapshot } from "./backend";
 
 import { firebaseConfig, firebaseEnabled } from "./config";
@@ -82,15 +82,18 @@ export function createFirebaseBackend(uidStr: string): Backend {
   const listsCol = collection(db, "users", uidStr, "lists");
   const tasksCol = collection(db, "users", uidStr, "tasks");
   const settingsDoc = doc(db, "users", uidStr, "private", "settings");
+  const metaDoc = doc(db, "users", uidStr, "private", "meta");
 
   return {
     kind: "firebase",
     subscribe(cb) {
       let lists: List[] = [];
       let tasks: Task[] = [];
+      let meta: Meta = EMPTY_META;
       let gotLists = false;
       let gotTasks = false;
-      const emit = () => gotLists && gotTasks && cb({ lists, tasks } satisfies Snapshot);
+      let gotMeta = false;
+      const emit = () => gotLists && gotTasks && gotMeta && cb({ lists, tasks, meta } satisfies Snapshot);
       const u1 = onSnapshot(listsCol, (s) => {
         lists = s.docs.map((d) => d.data() as List);
         gotLists = true;
@@ -101,9 +104,22 @@ export function createFirebaseBackend(uidStr: string): Backend {
         gotTasks = true;
         emit();
       });
+      const u3 = onSnapshot(
+        metaDoc,
+        (s) => {
+          meta = s.exists() ? { ...EMPTY_META, ...(s.data() as Meta) } : EMPTY_META;
+          gotMeta = true;
+          emit();
+        },
+        () => {
+          gotMeta = true;
+          emit();
+        },
+      );
       return () => {
         u1();
         u2();
+        u3();
       };
     },
     // Writes resolve once queued locally, so the UI never waits on the network.
@@ -118,6 +134,9 @@ export function createFirebaseBackend(uidStr: string): Backend {
     },
     async removeTask(id) {
       void deleteDoc(doc(tasksCol, id));
+    },
+    async putMeta(m) {
+      void setDoc(metaDoc, m);
     },
     async loadSyncedSettings() {
       try {

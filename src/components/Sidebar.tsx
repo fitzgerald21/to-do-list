@@ -3,7 +3,7 @@ import type { Scope } from "../App";
 import { childrenOf, descendantIds } from "../lib/tree";
 import { deleteListDeep, newList, patchList, saveList, useData } from "../state/store";
 import { toast } from "../state/ui";
-import { SPACES, type List, type Space } from "../types";
+import { SPACES, type List, type Place, type Space } from "../types";
 
 function loadCollapsed(): Record<string, boolean> {
   try {
@@ -26,11 +26,13 @@ export function Sidebar({
   setScope,
   onSettings,
   settingsActive,
+  onAbout,
 }: {
   scope: Scope;
   setScope: (s: Scope) => void;
   onSettings: () => void;
   settingsActive: boolean;
+  onAbout: (p: Place) => void;
 }) {
   const { lists, tasks } = useData();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed);
@@ -64,6 +66,7 @@ export function Sidebar({
           <button className="tree-name" onClick={() => setScope(sc)}>
             {l.closed ? "🔒 " : ""}
             {l.name}
+            {l.context?.trim() ? <span className="muted small" title="Has background"> 📄</span> : null}
           </button>
           {count > 0 && <span className="count">{count}</span>}
           <button className="dots" onClick={() => setMenu(menu === l.id ? null : l.id)} aria-label="List options">
@@ -80,6 +83,14 @@ export function Sidebar({
               }}
             >
               ＋ Sub-list
+            </button>
+            <button
+              onClick={() => {
+                setMenu(null);
+                onAbout({ kind: "list", id: l.id });
+              }}
+            >
+              📄 Background
             </button>
             <button
               onClick={() => {
@@ -122,7 +133,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <img src="/icon.svg" alt="" width={28} height={28} />
+        <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width={28} height={28} />
         <span>Brain Dump</span>
       </div>
       <div className="tree">

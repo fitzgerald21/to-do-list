@@ -17,6 +17,7 @@ const blank = (): AiAction => ({
   due_date: null,
   subtasks: [],
   complete_subtasks: [],
+  context: null,
 });
 
 const WORDS: Record<string, number> = {

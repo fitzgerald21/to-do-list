@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from "react";
 import type { Backend, Snapshot } from "../lib/storage/backend";
 import { descendantIds, uid } from "../lib/tree";
-import { DEFAULT_SETTINGS, type List, type Settings, type Space, type Task } from "../types";
+import { DEFAULT_SETTINGS, EMPTY_META, type List, type Meta, type Place, type Settings, type Space, type Task } from "../types";
 
 // ---------------------------------------------------------------- data store
 
 let backend: Backend | null = null;
-let snap: Snapshot & { ready: boolean } = { lists: [], tasks: [], ready: false };
+let snap: Snapshot & { ready: boolean } = { lists: [], tasks: [], meta: EMPTY_META, ready: false };
 const subs = new Set<() => void>();
 const notify = () => subs.forEach((f) => f());
 let unsub: (() => void) | null = null;
@@ -14,7 +14,7 @@ let unsub: (() => void) | null = null;
 export function connect(b: Backend) {
   unsub?.();
   backend = b;
-  snap = { lists: [], tasks: [], ready: false };
+  snap = { lists: [], tasks: [], meta: EMPTY_META, ready: false };
   notify();
   unsub = b.subscribe((s) => {
     snap = { ...s, ready: true };
@@ -27,7 +27,7 @@ export function disconnect() {
   unsub?.();
   unsub = null;
   backend = null;
-  snap = { lists: [], tasks: [], ready: false };
+  snap = { lists: [], tasks: [], meta: EMPTY_META, ready: false };
   notify();
 }
 
@@ -104,6 +104,24 @@ export async function saveTask(t: Task) {
 export async function saveList(l: List) {
   localPut("lists", l);
   await backend?.putList(l);
+}
+
+export async function saveMeta(m: Meta) {
+  snap = { ...snap, meta: m };
+  notify();
+  await backend?.putMeta(m);
+}
+
+/** The background doc for a place ("About me", Work, Personal or a list). */
+export function getContext(p: Place): string {
+  if (p.kind === "list") return snap.lists.find((l) => l.id === p.id)?.context ?? "";
+  return snap.meta.context[p.kind === "all" ? "all" : p.space] ?? "";
+}
+
+export async function setContext(p: Place, text: string) {
+  if (p.kind === "list") return patchList(p.id, { context: text });
+  const key = p.kind === "all" ? "all" : p.space;
+  await saveMeta({ ...snap.meta, context: { ...snap.meta.context, [key]: text }, updatedAt: now() });
 }
 
 export async function patchTask(id: string, patch: Partial<Task>) {

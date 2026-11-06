@@ -11,13 +11,14 @@ import { Sidebar } from "./components/Sidebar";
 import { TaskDetail } from "./components/TaskDetail";
 import { Toasts } from "./components/Toasts";
 import { FocusView } from "./components/FocusView";
+import { ContextPanel } from "./components/ContextPanel";
 import { fb, firebaseEnabled } from "./lib/storage/config";
 import { createLocalBackend } from "./lib/storage/local";
 import { descendantIds, isEffectivelyClosed, listPath } from "./lib/tree";
 import { connect, disconnect, useData } from "./state/store";
-import { SPACES, type Space, type Task } from "./types";
+import { SPACES, type Place, type Task } from "./types";
 
-export type Scope = { kind: "all" } | { kind: "space"; space: Space } | { kind: "list"; id: string };
+export type Scope = Place;
 export type ViewId = "list" | "focus" | "board" | "matrix" | "map" | "settings";
 
 const VIEWS: { id: Exclude<ViewId, "settings">; label: string; icon: string }[] = [
@@ -82,6 +83,7 @@ function Main({ user }: { user: User | null }) {
   const [showDone, setShowDoneState] = useState<boolean>(() => loadPref("showDone", false));
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [about, setAbout] = useState<Place | null>(null);
 
   const setScope = (s: Scope) => {
     setScopeState(s);
@@ -149,6 +151,10 @@ function Main({ user }: { user: User | null }) {
           setDrawer(false);
         }}
         settingsActive={view === "settings"}
+        onAbout={(p) => {
+          setAbout(p);
+          setDrawer(false);
+        }}
       />
       <div className="scrim" onClick={() => setDrawer(false)} />
       <main className="main">
@@ -196,7 +202,7 @@ function Main({ user }: { user: User | null }) {
           ) : view === "settings" ? (
             <SettingsView user={user} />
           ) : view === "list" ? (
-            <ListView {...ctx} onTag={setTagFilter} />
+            <ListView {...ctx} onTag={setTagFilter} onAbout={setAbout} />
           ) : view === "focus" ? (
             <FocusView {...ctx} onTag={setTagFilter} />
           ) : view === "board" ? (
@@ -210,6 +216,7 @@ function Main({ user }: { user: User | null }) {
         <CaptureBar scope={scope} onOpenTask={setOpenTaskId} />
       </main>
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTaskId(null)} onTag={(t) => { setTagFilter(t); setOpenTaskId(null); }} />}
+      {about && <ContextPanel key={JSON.stringify(about)} place={about} onClose={() => setAbout(null)} />}
       <Toasts />
     </div>
   );

@@ -1,4 +1,4 @@
-import type { List, Task } from "../../types";
+import { EMPTY_META, type List, type Task } from "../../types";
 import type { Backend, Snapshot } from "./backend";
 
 const KEY = "braindump:data:v1";
@@ -8,12 +8,12 @@ function read(): Snapshot {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      return { lists: d.lists ?? [], tasks: d.tasks ?? [] };
+      return { lists: d.lists ?? [], tasks: d.tasks ?? [], meta: d.meta ?? EMPTY_META };
     }
   } catch {
     /* ignore */
   }
-  return { lists: [], tasks: [] };
+  return { lists: [], tasks: [], meta: EMPTY_META };
 }
 
 /** Saves everything in this browser only. Used until Firebase is configured. */
@@ -26,7 +26,7 @@ export function createLocalBackend(): Backend {
     } catch {
       /* storage full / blocked */
     }
-    const snap = { lists: [...data.lists], tasks: [...data.tasks] };
+    const snap = { lists: [...data.lists], tasks: [...data.tasks], meta: data.meta };
     subs.forEach((cb) => cb(snap));
   };
   const upsert = <T extends { id: string }>(arr: T[], item: T) => {
@@ -64,6 +64,10 @@ export function createLocalBackend(): Backend {
     },
     async removeTask(id) {
       data.tasks = data.tasks.filter((t) => t.id !== id);
+      emit();
+    },
+    async putMeta(m) {
+      data.meta = m;
       emit();
     },
     async loadSyncedSettings() {

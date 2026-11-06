@@ -1,6 +1,6 @@
 import type { Status } from "../../types";
 
-export type ActionKind = "create_task" | "update_task" | "create_list" | "delete_task";
+export type ActionKind = "create_task" | "update_task" | "create_list" | "delete_task" | "update_context";
 
 /** One change the assistant wants to make. Flat on purpose so every provider can produce it. */
 export interface AiAction {
@@ -27,6 +27,8 @@ export interface AiAction {
   subtasks: string[];
   /** Checklist items (by text) to tick off. */
   complete_subtasks: string[];
+  /** update_context: new background facts to add to the topic's About doc. */
+  context: string | null;
 }
 
 export interface AiResult {
@@ -52,10 +54,10 @@ export const RESULT_SCHEMA = {
         required: [
           "kind", "task_id", "list_path", "title", "notes", "progress_update", "status",
           "waiting_on", "priority", "effort", "urgency", "tags", "links", "due_date",
-          "subtasks", "complete_subtasks",
+          "subtasks", "complete_subtasks", "context",
         ],
         properties: {
-          kind: { type: "string", enum: ["create_task", "update_task", "create_list", "delete_task"] },
+          kind: { type: "string", enum: ["create_task", "update_task", "create_list", "delete_task", "update_context"] },
           task_id: nullable("string"),
           list_path: strArr,
           title: nullable("string"),
@@ -79,6 +81,7 @@ export const RESULT_SCHEMA = {
           due_date: nullable("string"),
           subtasks: strArr,
           complete_subtasks: strArr,
+          context: nullable("string"),
         },
       },
     },
@@ -86,7 +89,7 @@ export const RESULT_SCHEMA = {
 } as const;
 
 const STATUS_SET = new Set(["todo", "in_progress", "waiting", "blocked", "done"]);
-const KINDS = new Set(["create_task", "update_task", "create_list", "delete_task"]);
+const KINDS = new Set(["create_task", "update_task", "create_list", "delete_task", "update_context"]);
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 const num = (v: unknown): number | null => {
@@ -136,10 +139,19 @@ export function normalizeResult(raw: unknown): AiResult {
       due_date: due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null,
       subtasks: strs(r.subtasks),
       complete_subtasks: strs(r.complete_subtasks),
+      context: str(r.context),
     });
   }
   return { actions, reply: str(o.reply) ?? "" };
 }
+
+/** Reply shape for "Organize" on a background doc. */
+export const CONTEXT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["context", "reply"],
+  properties: { context: { type: "string" }, reply: { type: "string" } },
+} as const;
 
 /** Pull the first JSON object out of a model reply (handles ```json fences and chatter). */
 export function extractJson(text: string): unknown {

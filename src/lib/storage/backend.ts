@@ -1,8 +1,9 @@
-import type { List, Settings, Task } from "../../types";
+import type { List, Meta, Settings, Task } from "../../types";
 
 export interface Snapshot {
   lists: List[];
   tasks: Task[];
+  meta: Meta;
 }
 
 export interface Backend {
@@ -12,6 +13,7 @@ export interface Backend {
   putTask(t: Task): Promise<void>;
   removeList(id: string): Promise<void>;
   removeTask(id: string): Promise<void>;
+  putMeta(m: Meta): Promise<void>;
   loadSyncedSettings(): Promise<Partial<Settings> | null>;
   saveSyncedSettings(s: Partial<Settings> | null): Promise<void>;
 }

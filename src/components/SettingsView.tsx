@@ -3,9 +3,9 @@ import type { User } from "firebase/auth";
 import { fetchModels, formatPrice, type ModelOption } from "../lib/ai/models";
 import { PROVIDERS } from "../lib/ai/providers";
 import { fb, firebaseEnabled } from "../lib/storage/config";
-import { getData, saveList, saveTask, updateSettings, useSettings } from "../state/store";
+import { getData, saveList, saveMeta, saveTask, updateSettings, useSettings } from "../state/store";
 import { toast } from "../state/ui";
-import { SPACES, type List, type ProviderId, type Settings, type Task } from "../types";
+import { SPACES, type List, type Meta, type ProviderId, type Settings, type Task } from "../types";
 
 function ModelPicker({ provider, apiKey, value, onChange }: { provider: ProviderId; apiKey: string; value: string; onChange: (id: string) => void }) {
   const [models, setModels] = useState<ModelOption[] | null>(null);
@@ -70,6 +70,7 @@ function ModelPicker({ provider, apiKey, value, onChange }: { provider: Provider
               >
                 <span className="model-name">
                   {m.name}
+                  {m.vision && <span title="Can read screenshots"> 👁</span>}
                   <span className="muted small"> {m.id !== m.name ? m.id : ""}</span>
                 </span>
                 <span className="model-price">{formatPrice(m)}</span>
@@ -99,8 +100,8 @@ export function SettingsView({ user }: { user: User | null }) {
   const [showKey, setShowKey] = useState(false);
 
   const exportData = () => {
-    const { lists, tasks } = getData();
-    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), lists, tasks }, null, 2)], { type: "application/json" });
+    const { lists, tasks, meta } = getData();
+    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), lists, tasks, meta }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `brain-dump-${new Date().toISOString().slice(0, 10)}.json`;
@@ -110,12 +111,13 @@ export function SettingsView({ user }: { user: User | null }) {
 
   const importData = async (file: File) => {
     try {
-      const d = JSON.parse(await file.text()) as { lists?: List[]; tasks?: Task[] };
+      const d = JSON.parse(await file.text()) as { lists?: List[]; tasks?: Task[]; meta?: Meta };
       const lists = d.lists ?? [];
       const tasks = d.tasks ?? [];
       if (!window.confirm(`Import ${lists.length} lists and ${tasks.length} tasks? Items with the same id are overwritten.`)) return;
       for (const l of lists) await saveList(l);
       for (const t of tasks) await saveTask(t);
+      if (d.meta?.context) await saveMeta({ ...getData().meta, context: { ...getData().meta.context, ...d.meta.context }, updatedAt: Date.now() });
       toast(`Imported ${lists.length} lists and ${tasks.length} tasks.`);
     } catch (e) {
       toast(`Import failed: ${(e as Error).message}`, { error: true });
@@ -242,6 +244,8 @@ export function SettingsView({ user }: { user: User | null }) {
                   onClick={async () => {
                     for (const l of localLeftover.lists ?? []) await saveList(l);
                     for (const t of localLeftover.tasks ?? []) await saveTask(t);
+                    const lm = (localLeftover as { meta?: Meta }).meta;
+                    if (lm?.context) await saveMeta({ ...getData().meta, context: { ...lm.context, ...getData().meta.context }, updatedAt: Date.now() });
                     localStorage.removeItem("braindump:data:v1");
                     toast("Moved your local tasks to the cloud.");
                   }}

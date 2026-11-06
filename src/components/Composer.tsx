@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { applyResult, describe, interpret, type InterpretOptions } from "../lib/ai/interpret";
 import type { AiResult } from "../lib/ai/schema";
+import { prepareImage, type Attachment } from "../lib/images";
 import { useDictation } from "../lib/speech";
 import { getSettings, useSettings } from "../state/store";
 import { toast } from "../state/ui";
@@ -8,6 +9,7 @@ import { toast } from "../state/ui";
 interface Pending {
   result: AiResult & { offline: boolean };
   raw: string;
+  attachments: Attachment[];
   skip: Set<number>;
 }
 
@@ -31,11 +33,30 @@ export function Composer({
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragging, setDragging] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = async (files: Iterable<File>) => {
+    const imgs = [...files].filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name));
+    if (!imgs.length) return;
+    setExpanded(true);
+    for (const f of imgs) {
+      try {
+        const a = await prepareImage(f, f.name && f.name !== "image.png" ? f.name : "screenshot");
+        setAttachments((cur) => [...cur, a].slice(0, 6));
+      } catch {
+        toast(`Couldn't open ${f.name || "that image"}. Try a PNG or JPEG screenshot.`, { error: true });
+      }
+    }
+  };
   const dict = useDictation(settings.speechLang, setText);
 
   const commit = async (p: Pending) => {
-    const receipt = await applyResult(p.result, { raw: p.raw, focusTaskId: opts().focusTaskId, skip: p.skip });
+    const n0 = p.attachments.length;
+    const raw = n0 ? `${p.raw}${p.raw ? " " : ""}[${n0} screenshot${n0 === 1 ? "" : "s"}]` : p.raw;
+    const receipt = await applyResult(p.result, { raw, focusTaskId: opts().focusTaskId, skip: p.skip });
     setPending(null);
     const n = p.result.actions.length - p.skip.size;
     toast(p.result.reply || `Saved ${n} change${n === 1 ? "" : "s"}.`, {
@@ -52,18 +73,20 @@ export function Composer({
 
   const submit = async (value = text) => {
     const raw = value.trim();
-    if (!raw || busy) return;
+    if ((!raw && !attachments.length) || busy) return;
     if (dict.listening) dict.stop();
     setBusy(true);
+    const atts = attachments;
     try {
-      const result = await interpret(raw, opts());
+      const result = await interpret(raw, opts(), atts);
       setText("");
+      setAttachments([]);
       setExpanded(false);
       if (!result.actions.length) {
         toast(result.reply || "Nothing to add there.");
         return;
       }
-      const p: Pending = { result, raw, skip: new Set() };
+      const p: Pending = { result, raw, attachments: atts, skip: new Set() };
       if (getSettings().reviewBeforeSaving) setPending(p);
       else await commit(p);
     } catch (e) {
@@ -86,8 +109,27 @@ export function Composer({
 
   const hasKey = !!settings.keys[settings.provider]?.trim();
 
+  const lines = text.split("\n").length + Math.floor(text.length / 60);
+  const rows = expanded || text || attachments.length ? Math.min(compact ? 6 : 9, Math.max(compact ? 2 : 3, lines)) : 1;
+
   return (
-    <div className={`composer ${compact ? "compact" : ""} ${expanded || text ? "expanded" : ""}`}>
+    <div
+      className={`composer ${compact ? "compact" : ""} ${expanded || text ? "expanded" : ""} ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.types].includes("Files")) {
+          e.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        setDragging(false);
+        if (e.dataTransfer.files.length) {
+          e.preventDefault();
+          void addFiles(e.dataTransfer.files);
+        }
+      }}
+    >
       {pending && (
         <div className="review">
           <div className="review-head">
@@ -132,6 +174,7 @@ export function Composer({
               className="btn"
               onClick={() => {
                 setText(pending.raw);
+                setAttachments(pending.attachments);
                 setPending(null);
                 setExpanded(true);
                 setTimeout(() => taRef.current?.focus(), 0);
@@ -149,14 +192,65 @@ export function Composer({
         </div>
       )}
       {dict.error && <div className="error-text small">{dict.error}</div>}
+      {attachments.length > 0 && (
+        <div className="attachments">
+          {attachments.map((a) => (
+            <div key={a.id} className="thumb" title={a.name}>
+              <img src={a.preview} alt={a.name} />
+              {a.tiles.length > 1 && <span className="thumb-badge">{a.tiles.length} parts</span>}
+              <button className="thumb-x" aria-label="Remove image" onClick={() => setAttachments(attachments.filter((x) => x.id !== a.id))} disabled={busy}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <span className="hint">Add a few words if you like (“this is from Kathy about the vendor deal”), then send.</span>
+        </div>
+      )}
       <div className="composer-row">
+        <button
+          className="attach"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          aria-label="Add a screenshot or photo"
+          title="Add a screenshot or photo (or paste / drop one)"
+        >
+          📎
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files) void addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
         <textarea
           ref={taRef}
           value={text}
-          rows={expanded || text ? 3 : 1}
-          placeholder={busy ? "Thinking…" : dict.listening ? "Listening… tap ■ when you're done" : placeholder}
+          rows={rows}
+          placeholder={
+            busy
+              ? attachments.length
+                ? "Reading…"
+                : "Thinking…"
+              : dict.listening
+                ? "Listening… tap ■ when you're done"
+                : attachments.length
+                  ? "Anything to add? (optional)"
+                  : placeholder
+          }
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files];
+            if (files.some((f) => f.type.startsWith("image/"))) {
+              e.preventDefault();
+              void addFiles(files);
+            }
+          }}
           onFocus={() => setExpanded(true)}
-          onBlur={() => !text && setExpanded(false)}
+          onBlur={() => !text && !attachments.length && setExpanded(false)}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !("ontouchstart" in window)) {
@@ -175,10 +269,13 @@ export function Composer({
         >
           {dict.listening ? "■" : "🎙"}
         </button>
-        <button className="send" onClick={() => void submit()} disabled={busy || !text.trim()} aria-label="Send">
+        <button className="send" onClick={() => void submit()} disabled={busy || (!text.trim() && !attachments.length)} aria-label="Send">
           {busy ? <span className="spinner" /> : "➤"}
         </button>
       </div>
+      {hasKey && !compact && text.length > 400 && !pending && (
+        <div className="hint">Pasted an email or chat? Send it and I'll pull out the to-dos and file them where they belong.</div>
+      )}
       {!hasKey && !compact && (expanded || text) && (
         <div className="hint">No AI key yet — using the simple parser (“add X under Y priority 8 #tag”). Add a key in Settings for natural language.</div>
       )}
