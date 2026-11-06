@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Scope } from "../App";
 import { SORTS, sortTasks, type SortKey } from "../lib/score";
-import { childrenOf } from "../lib/tree";
+import { childrenOf, listColor } from "../lib/tree";
+import { dropAttrs, onTaskPlaced, startDrag } from "../state/dnd";
 import { newTask, patchList, saveTask, useData } from "../state/store";
 import { SPACES, type List, type Place, type Space, type Task } from "../types";
+import { ListColorDot } from "./ColorPicker";
 import { AboutCard } from "./ContextPanel";
 import { promptNewList } from "./Sidebar";
-import { TaskRow } from "./TaskRow";
+import { DragHandle, TaskRow } from "./TaskRow";
 
 export interface ViewProps {
   scope: Scope;
@@ -54,6 +56,7 @@ function QuickAdd({ space, listId }: { space: Space; listId: string | null }) {
   return (
     <form
       className="quick-add"
+      {...(listId ? dropAttrs("list", listId, true) : dropAttrs("space", space))}
       onSubmit={(e) => {
         e.preventDefault();
         if (!v.trim()) return;
@@ -75,16 +78,43 @@ export function ListView({
   onAbout,
 }: ViewProps & { onTag: (t: string) => void; onAbout: (p: Place) => void }) {
   const { lists } = useData();
-  const [sort, setSort] = useSort("list", "score");
+  const [sort, setSort] = useSort("list", "manual");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // Dropping a task in a specific spot only makes sense if the view then keeps it there.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onTaskPlaced(() => setSort("manual")), []);
+
+  // A sub-task sits under its parent, unless the parent is hidden (done, or filtered out by a search).
+  const visible = new Set(tasks.map((t) => t.id));
   const tasksIn = (space: Space, listId: string | null) =>
     sortTasks(
-      tasks.filter((t) => t.space === space && t.listId === listId),
+      tasks.filter((t) => t.space === space && t.listId === listId && !(t.parentId && visible.has(t.parentId))),
       sort,
     );
   const countUnder = (l: List): number =>
     tasks.filter((t) => t.listId === l.id).length + childrenOf(lists, l.id, l.space).reduce((n, c) => n + countUnder(c), 0);
+
+  const renderTask = (t: Task, nested = false): React.ReactNode => {
+    const kids = sortTasks(
+      tasks.filter((k) => k.parentId === t.id),
+      sort,
+    );
+    return (
+      <div key={t.id}>
+        <TaskRow
+          task={t}
+          onOpen={onOpen}
+          onTag={onTag}
+          nested={nested}
+          droppable
+          folded={collapsed[t.id]}
+          onFold={kids.length ? () => setCollapsed({ ...collapsed, [t.id]: !collapsed[t.id] }) : undefined}
+        />
+        {kids.length > 0 && !collapsed[t.id] && <div className="subtasks">{kids.map((k) => renderTask(k, true))}</div>}
+      </div>
+    );
+  };
 
   const insideClosed = scope.kind === "list";
   const renderList = (l: List, depth: number): React.ReactNode => {
@@ -92,12 +122,19 @@ export function ListView({
     const kids = childrenOf(lists, l.id, l.space);
     const own = tasksIn(l.space, l.id);
     const isCollapsed = collapsed[l.id];
+    const color = listColor(lists, l.id);
     return (
-      <section key={l.id} className="group" style={{ marginLeft: depth ? 12 : 0 }}>
-        <header className="group-head">
+      <section key={l.id} className="group" style={{ marginLeft: depth ? 12 : 0, "--c": color } as CSSProperties}>
+        <header
+          className="group-head"
+          {...dropAttrs("list", l.id)}
+          onPointerDown={(e) => startDrag(e, { kind: "list", id: l.id, label: l.name, color })}
+        >
+          <DragHandle />
           <button className="caret" onClick={() => setCollapsed({ ...collapsed, [l.id]: !isCollapsed })}>
             {isCollapsed ? "▸" : "▾"}
           </button>
+          <ListColorDot list={l} />
           <h3>
             {l.closed && "🔒 "}
             {l.name}
@@ -122,9 +159,7 @@ export function ListView({
         </header>
         {!isCollapsed && (
           <div className="group-body">
-            {own.map((t) => (
-              <TaskRow key={t.id} task={t} onOpen={onOpen} onTag={onTag} />
-            ))}
+            {own.map((t) => renderTask(t))}
             <QuickAdd space={l.space} listId={l.id} />
             {kids.map((k) => renderList(k, depth + 1))}
           </div>
@@ -140,13 +175,11 @@ export function ListView({
     return (
       <div key={space} className="space-section">
         {showHeader && (
-          <h2 className="space-head">
+          <h2 className="space-head" style={{ color: sp.color }} {...dropAttrs("space", space)}>
             {sp.emoji} {sp.name}
           </h2>
         )}
-        {loose.map((t) => (
-          <TaskRow key={t.id} task={t} onOpen={onOpen} onTag={onTag} />
-        ))}
+        {loose.map((t) => renderTask(t))}
         <QuickAdd space={space} listId={null} />
         {roots.map((l) => renderList(l, 0))}
         <button className="link small add-list" onClick={() => void promptNewList(space, null)}>

@@ -1,18 +1,29 @@
+import type { CSSProperties } from "react";
 import { score, scoreColor } from "../lib/score";
 import { describeRepeat } from "../lib/recurrence";
-import { pathLabel } from "../lib/tree";
+import { pathLabel, placeColor } from "../lib/tree";
+import { dropAttrs, startDrag } from "../state/dnd";
 import { patchTask, useData } from "../state/store";
 import { STATUSES, type Task } from "../types";
 
 export function ScoreBadge({ task }: { task: Task }) {
   const s = score(task);
+  if (s === null) return null;
   return (
     <span
       className="score"
       style={{ borderColor: scoreColor(s), color: scoreColor(s) }}
-      title={`Score ${s} = priority ${task.priority} × urgency ${task.urgency} × ease ${11 - task.effort} ÷ 10`}
+      title={`Score ${s}, from priority ${task.priority ?? "not set"}, urgency ${task.urgency ?? "not set"} and effort ${task.effort ?? "not set"}`}
     >
       {s}
+    </span>
+  );
+}
+
+export function DragHandle() {
+  return (
+    <span className="drag-handle" data-drag-handle aria-hidden="true">
+      ⠿
     </span>
   );
 }
@@ -44,18 +55,60 @@ export function TaskRow({
   onOpen,
   showPath = false,
   onTag,
+  nested = false,
+  droppable = false,
+  folded,
+  onFold,
 }: {
   task: Task;
   onOpen: (id: string) => void;
   showPath?: boolean;
   onTag?: (t: string) => void;
+  /** Shown under its parent, so it doesn't need to say whose sub-task it is. */
+  nested?: boolean;
+  /** Other tasks can be dropped on it. */
+  droppable?: boolean;
+  folded?: boolean;
+  onFold?: () => void;
 }) {
-  const { lists } = useData();
+  const { lists, tasks } = useData();
   const done = task.status === "done";
   const due = dueLabel(task.dueDate);
-  const subDone = task.subtasks.filter((s) => s.done).length;
+  const kids = tasks.filter((t) => t.parentId === task.id);
+  const kidsDone = kids.filter((t) => t.status === "done").length;
+  const parent = !nested && task.parentId ? tasks.find((t) => t.id === task.parentId) : null;
+  const color = placeColor(lists, task.listId, task.space);
+  const pew = (
+    [
+      ["P", task.priority],
+      ["E", task.effort],
+      ["U", task.urgency],
+    ] as const
+  )
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}${v}`)
+    .join(" ");
   return (
-    <div className={`task-row ${done ? "done" : ""}`} onClick={() => onOpen(task.id)}>
+    <div
+      className={`task-row ${done ? "done" : ""}`}
+      style={{ "--c": color } as CSSProperties}
+      onClick={() => onOpen(task.id)}
+      onPointerDown={(e) => startDrag(e, { kind: "task", id: task.id, label: task.title, color })}
+      {...(droppable ? dropAttrs("task", task.id) : {})}
+    >
+      <DragHandle />
+      {onFold && (
+        <button
+          className="caret"
+          aria-label={folded ? "Show sub-tasks" : "Hide sub-tasks"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFold();
+          }}
+        >
+          {folded ? "▸" : "▾"}
+        </button>
+      )}
       <button
         className={`check ${done ? "checked" : ""}`}
         aria-label={done ? "Mark not done" : "Mark done"}
@@ -69,13 +122,14 @@ export function TaskRow({
       <div className="task-main">
         <div className="task-title">{task.title}</div>
         <div className="task-meta">
+          {parent && <span className="path">↳ {parent.title}</span>}
           {showPath && <span className="path">{pathLabel(lists, task)}</span>}
           <StatusChip task={task} />
           {due && <span className={`chip due ${due.cls}`}>📅 {due.text}</span>}
           {task.repeat && <RepeatChip task={task} />}
-          {task.subtasks.length > 0 && (
-            <span className="chip">
-              ☑ {subDone}/{task.subtasks.length}
+          {kids.length > 0 && (
+            <span className="chip" title="Sub-tasks done">
+              ☑ {kidsDone}/{kids.length}
             </span>
           )}
           {task.links.length > 0 && <span className="chip">🔗 {task.links.length}</span>}
@@ -94,12 +148,14 @@ export function TaskRow({
           ))}
         </div>
       </div>
-      <div className="task-side">
-        <ScoreBadge task={task} />
-        <span className="pew" title="Priority · Effort · Urgency">
-          P{task.priority} E{task.effort} U{task.urgency}
-        </span>
-      </div>
+      {(score(task) !== null || pew) && (
+        <div className="task-side">
+          <ScoreBadge task={task} />
+          <span className="pew" title="Priority · Effort · Urgency">
+            {pew}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

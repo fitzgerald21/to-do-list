@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Scope } from "../App";
-import { childrenOf, descendantIds } from "../lib/tree";
+import { childrenOf, descendantIds, listColor } from "../lib/tree";
+import { dropAttrs, startDrag } from "../state/dnd";
 import { deleteListDeep, newList, patchList, saveList, useData } from "../state/store";
 import { toast } from "../state/ui";
 import { SPACES, type List, type Place, type Space } from "../types";
+import { ColorSwatches } from "./ColorPicker";
 
 function loadCollapsed(): Record<string, boolean> {
   try {
@@ -57,13 +59,20 @@ export function Sidebar({
     const kids = childrenOf(lists, l.id, l.space).filter((k) => showClosed || !k.closed);
     const count = openCount(descendantIds(lists, l.id));
     const sc: Scope = { kind: "list", id: l.id };
+    const color = listColor(lists, l.id);
     return (
       <div key={l.id}>
-        <div className={`tree-item ${isActive(sc) ? "active" : ""} ${l.closed ? "closed" : ""}`} style={{ paddingLeft: 8 + depth * 14 }}>
+        <div
+          className={`tree-item ${isActive(sc) ? "active" : ""} ${l.closed ? "closed" : ""}`}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          {...dropAttrs("list", l.id)}
+          onPointerDown={(e) => startDrag(e, { kind: "list", id: l.id, label: l.name, color })}
+        >
           <button className="caret" onClick={() => toggle(l.id)} style={{ visibility: kids.length ? "visible" : "hidden" }}>
             {collapsed[l.id] ? "▸" : "▾"}
           </button>
-          <button className="tree-name" onClick={() => setScope(sc)}>
+          <span className="list-dot" style={{ "--c": color } as CSSProperties} />
+          <button className="tree-name" data-drag-ok onClick={() => setScope(sc)}>
             {l.closed ? "🔒 " : ""}
             {l.name}
             {l.context?.trim() ? <span className="muted small" title="Has background"> 📄</span> : null}
@@ -92,6 +101,7 @@ export function Sidebar({
             >
               📄 Background
             </button>
+            <ColorSwatches list={l} />
             <button
               onClick={() => {
                 setMenu(null);
@@ -148,7 +158,7 @@ export function Sidebar({
           const roots = childrenOf(lists, null, sp.id);
           return (
             <div key={sp.id} className="space-block">
-              <div className={`tree-item top ${isActive(sc) ? "active" : ""}`}>
+              <div className={`tree-item top ${isActive(sc) ? "active" : ""}`} {...dropAttrs("space", sp.id)}>
                 <button className="caret" onClick={() => toggle(sp.id)}>
                   {collapsed[sp.id] ? "▸" : "▾"}
                 </button>

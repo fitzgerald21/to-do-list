@@ -10,7 +10,7 @@ Open any task and **talk about it**:
 
 > “Right now I'm waiting on Jordan for the report. Yesterday I talked with Michael and he said he'd get me the data on Thursday.”
 
-The task changes to **Waiting · Jordan**. A dated line goes into its progress log ("Waiting on Jordan for the report. Michael will send the data Thu Nov 12."), and a follow-up step is added to its checklist. Whatever you actually said is kept alongside the log entry.
+The task changes to **Waiting · Jordan**. A dated line goes into its progress log ("Waiting on Jordan for the report. Michael will send the data Thu Nov 12."), and a follow-up sub-task is added under it. Whatever you actually said is kept alongside the log entry.
 
 **Paste or screenshot anything.** Paste an email, or tap 📎 and pick a screenshot of a text thread. The AI works out what you need to do (or who you're waiting on), files each item in the right topic, and puts the key details and who it came from in the notes.
 
@@ -19,12 +19,15 @@ The task changes to **Waiting · Jordan**. A dated line goes into its progress l
 ## Features
 
 - **Two main branches, Work and Personal**, with lists and sub-lists nested as deep as you like. Lists can be closed (archived) and reopened.
-- **Capture by voice or typing**, on your phone or computer. You can add several to-dos at once, name the list ("under X", "add to X") and say the priority, effort, urgency, tags, due date ("next Tuesday"), links or checklist steps. New tasks go into the list you're currently looking at unless you name another.
+- **Capture by voice or typing**, on your phone or computer. You can add several to-dos at once, name the list ("under X", "add to X") and say the priority, effort, urgency, tags, due date ("next Tuesday"), links or sub-tasks. New tasks go into the list you're currently looking at unless you name another.
 - **Screenshots and pasted text**: tap 📎 (or paste / drag an image in) to attach screenshots. Long scrolling screenshots are cut into readable pieces. Paste whole emails or chat logs into the box. Works in the main bar and inside a task ("here's Jordan's reply").
 - **Background docs**: one for **About me**, one each for **Work** and **Personal**, and one for every list. Talk or type, then **✨ Organize**. You can also add to them from the main bar ("for Transformation, Lisa is taking over the vendor side"). The AI uses them to route to-dos and to fix mis-heard names.
 - **Updates by voice**: mark tasks done, say who you're waiting on, move tasks, add notes. This works from the main bar or from inside a task.
-- **Repeating tasks**: every N days/weeks/months/years; specific weekdays (Mon/Wed/Fri, weekdays, every other Tuesday); a day of the month (clamped for short months), the Nth or last weekday ("2nd Tuesday", "last Friday"), or the last day of the month; yearly on a date or "4th Thursday of November"; counted from the due date or from when you finish it ("3 months after I last changed the filter"); ending never, on a date, or after N times. Say it ("pay rent on the 1st of every month") or pick it in the task panel. Checking one off moves it to its next date, resets its checklist and logs the completion (with Undo).
-- **Task fields**: status (to do, in progress, waiting on someone, blocked, done), waiting on, priority, effort and urgency (each 1–10), tags, links, checklist, notes, progress log and due date.
+- **Repeating tasks**: every N days/weeks/months/years; specific weekdays (Mon/Wed/Fri, weekdays, every other Tuesday); a day of the month (clamped for short months), the Nth or last weekday ("2nd Tuesday", "last Friday"), or the last day of the month; yearly on a date or "4th Thursday of November"; counted from the due date or from when you finish it ("3 months after I last changed the filter"); ending never, on a date, or after N times. Say it ("pay rent on the 1st of every month") or pick it in the task panel. Checking one off moves it to its next date, reopens its sub-tasks and logs the completion (with Undo).
+- **Task fields**: status (to do, in progress, waiting on someone, blocked, done), waiting on, priority, effort and urgency (each 1–10, blank unless you or the AI set one), tags, links, notes, progress log and due date.
+- **Sub-tasks**: real tasks that live under a task, nest to any depth and show up in every view with their own status, due date and so on. Finishing or deleting a task does the same to its sub-tasks (with Undo).
+- **Drag and drop** in Lists, the sidebar, Board and Mind map, with a mouse or a finger. Drop a task on a list to move it, on the middle of another task to make it a sub-task, or on a task's top or bottom edge to place it there. Lists and sub-lists move the same way, even between Work and Personal. On a phone, drag by the ⠿ handle, or press and hold anywhere else. Moves offer Undo, and Esc cancels a drag.
+- **Colors**: every top-level list gets its own color, which its sub-lists and tasks share across all views, including the mind map. Tap a list's dot to choose another.
 - **Priority score** from 0 to 100: `priority × urgency × (11 − effort) ÷ 10`. Important, urgent and easy tasks rise to the top.
 - **Views**
   - **Lists**: the full tree, grouped and collapsible, with quick-add in every list.

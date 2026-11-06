@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { score, scoreColor, sortTasks } from "../lib/score";
-import { childrenOf } from "../lib/tree";
+import { childrenOf, listColor, placeColor } from "../lib/tree";
+import { dropAttrs, registerPanner, startDrag } from "../state/dnd";
 import { useData } from "../state/store";
 import { SPACES, STATUSES, type List, type Space, type Task } from "../types";
 import type { ViewProps } from "./ListView";
@@ -10,6 +11,7 @@ interface MNode {
   label: string;
   kind: "root" | "space" | "list" | "task";
   task?: Task;
+  color: string;
   children: MNode[];
   hidden: number; // collapsed descendants count
   x: number;
@@ -33,11 +35,26 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
   const moved = useRef(false);
 
   const tree = useMemo(() => {
+    const visible = new Set(tasks.map((t) => t.id));
+    const taskNode = (t: Task): MNode => ({
+      key: t.id,
+      label: t.title,
+      kind: "task",
+      task: t,
+      color: placeColor(lists, t.listId, t.space),
+      children: sortTasks(
+        tasks.filter((k) => k.parentId === t.id),
+        "manual",
+      ).map(taskNode),
+      hidden: 0,
+      x: 0,
+      y: 0,
+    });
     const taskNodes = (space: Space, listId: string | null): MNode[] =>
       sortTasks(
-        tasks.filter((t) => t.space === space && t.listId === listId),
-        "score",
-      ).map((t) => ({ key: t.id, label: t.title, kind: "task", task: t, children: [], hidden: 0, x: 0, y: 0 }));
+        tasks.filter((t) => t.space === space && t.listId === listId && !(t.parentId && visible.has(t.parentId))),
+        "manual",
+      ).map(taskNode);
 
     const listNode = (l: List): MNode | null => {
       if (l.closed && !(scope.kind === "list" && scope.id === l.id)) return null;
@@ -47,7 +64,7 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
           .map(listNode)
           .filter((x): x is MNode => !!x),
       ];
-      return collapse({ key: l.id, label: l.name, kind: "list", children: kids, hidden: 0, x: 0, y: 0 });
+      return collapse({ key: l.id, label: l.name, kind: "list", color: listColor(lists, l.id), children: kids, hidden: 0, x: 0, y: 0 });
     };
     const spaceNode = (space: Space): MNode => {
       const sp = SPACES.find((s) => s.id === space)!;
@@ -57,7 +74,7 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
           .map(listNode)
           .filter((x): x is MNode => !!x),
       ];
-      return collapse({ key: space, label: `${sp.emoji} ${sp.name}`, kind: "space", children: kids, hidden: 0, x: 0, y: 0 });
+      return collapse({ key: space, label: `${sp.emoji} ${sp.name}`, kind: "space", color: sp.color, children: kids, hidden: 0, x: 0, y: 0 });
     };
     const countAll = (n: MNode): number => n.children.reduce((s, c) => s + 1 + countAll(c), 0) + n.hidden;
     function collapse(n: MNode): MNode {
@@ -70,11 +87,11 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
 
     let root: MNode;
     if (scope.kind === "all")
-      root = { key: "root", label: "✨ Everything", kind: "root", children: SPACES.map((s) => spaceNode(s.id)), hidden: 0, x: 0, y: 0 };
+      root = { key: "root", label: "✨ Everything", kind: "root", color: "var(--accent)", children: SPACES.map((s) => spaceNode(s.id)), hidden: 0, x: 0, y: 0 };
     else if (scope.kind === "space") root = spaceNode(scope.space);
     else {
       const l = lists.find((x) => x.id === scope.id);
-      root = (l && listNode(l)) ?? { key: "none", label: "Empty", kind: "root", children: [], hidden: 0, x: 0, y: 0 };
+      root = (l && listNode(l)) ?? { key: "none", label: "Empty", kind: "root", color: "var(--accent)", children: [], hidden: 0, x: 0, y: 0 };
     }
 
     // Tidy horizontal layout: leaves stacked, parents centred on children.
@@ -132,6 +149,7 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
       zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
+    registerPanner(el, (dx, dy) => setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy })));
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
@@ -183,7 +201,7 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
         <button className="icon-btn" onClick={fit}>
           ⤢
         </button>
-        <span className="muted small">Tap a list to fold it · tap a task to open</span>
+        <span className="muted small">Tap a list to fold it · tap a task to open · drag to move (on a phone, press and hold first)</span>
       </div>
       <svg
         ref={svgRef}
@@ -200,21 +218,44 @@ export function MindMapView({ scope, tasks, onOpen }: ViewProps) {
             const x2 = b.x;
             const y2 = b.y + NODE_H / 2;
             const mx = (x1 + x2) / 2;
-            return <path key={a.key + b.key} className="map-edge" d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} />;
+            return <path key={a.key + b.key} className="map-edge" style={{ stroke: b.color }} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} />;
           })}
           {nodes.map((n) => {
             const t = n.task;
             const st = t ? STATUSES.find((s) => s.id === t.status)! : null;
-            const s = t ? score(t) : 0;
+            const s = t ? score(t) : null;
             return (
-              <g key={n.key} transform={`translate(${n.x},${n.y})`} className={`map-node ${n.kind} ${t?.status === "done" ? "done" : ""}`} onClick={() => click(n)}>
+              <g
+                key={n.key}
+                transform={`translate(${n.x},${n.y})`}
+                className={`map-node ${n.kind} ${t?.status === "done" ? "done" : ""}`}
+                style={{ "--c": n.color } as CSSProperties}
+                onClick={() => click(n)}
+                {...(n.kind !== "root" ? dropAttrs(n.kind, n.key) : {})}
+                onPointerDown={(e) => {
+                  if (n.kind !== "task" && n.kind !== "list") return;
+                  // A mouse on a node drags it. A finger may still be panning or pinching until a long press.
+                  if (e.pointerType === "mouse") {
+                    e.stopPropagation();
+                    moved.current = false;
+                  }
+                  startDrag(e, { kind: n.kind, id: n.key, label: n.label, color: n.color }, {
+                    onActivate: () => {
+                      pointers.current.clear();
+                      lastPinch.current = null;
+                    },
+                  });
+                }}
+              >
+                <line className="drop-line before" x1={0} x2={NODE_W} y1={-4} y2={-4} />
+                <line className="drop-line after" x1={0} x2={NODE_W} y1={NODE_H + 4} y2={NODE_H + 4} />
                 <rect width={NODE_W} height={NODE_H} rx={n.kind === "task" ? 6 : 14} />
                 {st && <circle cx={12} cy={NODE_H / 2} r={5} fill={st.color} />}
                 <text x={t ? 24 : 12} y={NODE_H / 2 + 4.5}>
                   {trunc(n.label, t ? 22 : 24)}
                   {n.hidden ? ` (+${n.hidden})` : ""}
                 </text>
-                {t && (
+                {t && s !== null && (
                   <text x={NODE_W - 8} y={NODE_H / 2 + 4.5} textAnchor="end" className="map-score" fill={scoreColor(s)}>
                     {s}
                   </text>

@@ -8,7 +8,8 @@ export const SYSTEM_PROMPT = `You are the input brain of a personal to-do app. T
 The data:
 - Two top-level spaces: "Work" and "Personal".
 - Inside each space, lists (topics) nest to any depth, e.g. Work > Transformation > Reporting.
-- Each task has: title, notes, status (todo | in_progress | waiting | blocked | done), waiting_on (a person/thing), priority 1-10 (importance), effort 1-10 (how much work; 1 = minutes, 10 = weeks), urgency 1-10 (how soon), tags, links, due_date (YYYY-MM-DD), subtasks (checklist), and a progress log of dated updates.
+- Each task has: title, notes, status (todo | in_progress | waiting | blocked | done), waiting_on (a person/thing), priority 1-10 (importance), effort 1-10 (how much work; 1 = minutes, 10 = weeks), urgency 1-10 (how soon), tags, links, due_date (YYYY-MM-DD), and a progress log of dated updates.
+- A task can have sub-tasks: smaller tasks that live under it and appear in its list. A sub-task is a full task, so update_task and delete_task work on one directly. Deleting or finishing a task does the same to its sub-tasks.
 
 Return a JSON object: {"actions": [...], "reply": "..."}. Every action object has every field; use null / [] for anything not being set.
 
@@ -16,6 +17,7 @@ Action kinds:
 1. create_task: a new to-do. One utterance may contain several to-dos - create one action for each.
    - title: short and action-first, keep names and specifics ("Make spreadsheet for Kathy"). Fix obvious dictation errors.
    - notes: any extra detail the user gave beyond the title, cleaned up into short sentences or bullets. null if none.
+   - subtasks: the titles of steps the user gave that belong under this task. [] if none.
    - list_path: where it goes. Start with "Work" or "Personal" when you can tell, then list names, e.g. ["Work", "Transformation"]. If the user names a list ("under transformation", "add to groceries", "for the website project"), match it to an existing list from the outline (fuzzy/mis-heard names allowed) and give its full path. If they name a list that doesn't exist, give the path they want and it will be created. If no list is named, put it in the clearly-matching existing list only when obvious; otherwise just the space, e.g. ["Personal"]. Use [] only if you truly can't tell work from personal.
 2. update_task: change an existing task. Use when the user refers to something already in the open task list (match loosely by meaning). Set task_id from the list.
    - Set only fields that change; null / [] for the rest.
@@ -23,7 +25,7 @@ Action kinds:
    - status: "waiting" when they're waiting on someone (also set waiting_on to who/what), "in_progress" when they've started, "blocked" when stuck, "done" when finished ("done with", "finished", "close out", "check off").
    - notes: only for durable reference detail worth keeping in notes (not the news itself).
    - list_path non-empty = move the task there.
-   - subtasks: new checklist items; complete_subtasks: existing checklist items (by text) that are now done.
+   - subtasks: titles of new sub-tasks to add under this task; complete_subtasks: its existing sub-tasks (by title) that are now done.
 3. create_list: create a new (sub)list with no task, only when the user explicitly asks for a new list/topic/project. list_path = full path including the new name.
 4. delete_task: only when the user explicitly says to delete/remove/trash a task. Set task_id.
 5. update_context: the user is describing a topic itself rather than a to-do: what a project is, who's involved and their roles, clients, systems, jargon and nicknames, what kind of things belong there ("the transformation project is about...", "Kathy is the exec sponsor", "Jordan handles the data side of the vendor stuff"). Every topic has a background doc (shown in <background>).
@@ -42,7 +44,7 @@ Repeating tasks - set repeat only when the user says something recurs (or, on up
 - To stop a task repeating ("stop repeating", "this doesn't recur anymore"), use update_task with repeat.freq "none".
 - Marking a repeating task done (status "done") is fine: the app moves it to the next date automatically.
 
-Scoring - set only when the user expresses it, otherwise null (the app defaults to 5):
+Scoring - set only when the user expresses it. Otherwise leave it null: the task simply has no priority. Never guess one:
 - priority: "top/high/most important" -> 8-9, "critical/number one" -> 10, "low priority/someday" -> 2-3, "priority 7" -> 7.
 - urgency: "ASAP/urgent/today" -> 9-10, "this week" -> 7, "soon" -> 6, "no rush/eventually" -> 2-3. Also set due_date if a date is implied.
 - effort: "quick/easy/5 minutes" -> 1-2, "an hour" -> 3, "a day" -> 5-6, "big project" -> 8-10.
@@ -97,6 +99,8 @@ export function buildUserMessage(utterance: string, ctx: PromptContext): string 
     .slice(0, 250)
     .map((t) => {
       const bits = [`${t.id} | ${pathLabel(ctx.lists, t)} | ${t.title} | ${t.status}`];
+      const parent = t.parentId ? ctx.tasks.find((x) => x.id === t.parentId) : null;
+      if (parent) bits.push(`sub-task of "${parent.title}"`);
       if (t.waitingOn) bits.push(`waiting on ${t.waitingOn}`);
       if (t.repeat) bits.push(`repeats: ${describeRepeat(t.repeat, t.dueDate)}`);
       return bits.join(" | ");
@@ -110,9 +114,9 @@ id: ${t.id}
 title: ${t.title}
 where: ${pathLabel(ctx.lists, t)}
 status: ${STATUSES.find((s) => s.id === t.status)?.label}${t.waitingOn ? ` (waiting on ${t.waitingOn})` : ""}
-priority ${t.priority}, effort ${t.effort}, urgency ${t.urgency}${t.dueDate ? `, due ${t.dueDate}` : ""}${t.repeat ? `\nrepeats: ${describeRepeat(t.repeat, t.dueDate)}` : ""}
+priority ${t.priority ?? "not set"}, effort ${t.effort ?? "not set"}, urgency ${t.urgency ?? "not set"}${t.dueDate ? `, due ${t.dueDate}` : ""}${t.repeat ? `\nrepeats: ${describeRepeat(t.repeat, t.dueDate)}` : ""}
 tags: ${t.tags.join(", ") || "none"}
-checklist: ${t.subtasks.map((s) => `[${s.done ? "x" : " "}] ${s.text}`).join("; ") || "none"}
+sub-tasks: ${ctx.tasks.filter((x) => x.parentId === t.id).map((x) => `[${x.status === "done" ? "x" : " "}] ${x.title}`).join("; ") || "none"}
 notes: ${t.notes || "none"}
 recent updates:
 ${t.updates.slice(-8).map((u) => `- ${toIso(new Date(u.at))}: ${u.text}`).join("\n") || "none"}

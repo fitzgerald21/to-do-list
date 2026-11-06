@@ -124,18 +124,6 @@ export function SettingsView({ user }: { user: User | null }) {
     }
   };
 
-  // Moving from "this browser only" to the cloud.
-  const localLeftover = (() => {
-    if (!firebaseEnabled) return null;
-    try {
-      const raw = localStorage.getItem("braindump:data:v1");
-      const d = raw ? JSON.parse(raw) : null;
-      return d && (d.tasks?.length || d.lists?.length) ? (d as { lists: List[]; tasks: Task[] }) : null;
-    } catch {
-      return null;
-    }
-  })();
-
   return (
     <div className="view settings">
       <section className="card-section">
@@ -236,24 +224,6 @@ export function SettingsView({ user }: { user: User | null }) {
               Sync my AI settings &amp; API keys to my other devices
             </label>
             <p className="muted small">Stored in your own Firestore document, readable only by your account.</p>
-            {localLeftover && (
-              <div className="notice">
-                Found {localLeftover.tasks?.length ?? 0} tasks saved in this browser from before you connected Firebase.{" "}
-                <button
-                  className="btn"
-                  onClick={async () => {
-                    for (const l of localLeftover.lists ?? []) await saveList(l);
-                    for (const t of localLeftover.tasks ?? []) await saveTask(t);
-                    const lm = (localLeftover as { meta?: Meta }).meta;
-                    if (lm?.context) await saveMeta({ ...getData().meta, context: { ...lm.context, ...getData().meta.context }, updatedAt: Date.now() });
-                    localStorage.removeItem("braindump:data:v1");
-                    toast("Moved your local tasks to the cloud.");
-                  }}
-                >
-                  Move them to my account
-                </button>
-              </div>
-            )}
             <button className="btn" onClick={() => void fb().then((m) => m.logOut())}>
               Sign out
             </button>

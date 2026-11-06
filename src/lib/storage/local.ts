@@ -1,9 +1,9 @@
-import { EMPTY_META, type List, type Task } from "../../types";
+import { EMPTY_META, type List, type Meta, type Task } from "../../types";
 import type { Backend, Snapshot } from "./backend";
 
 const KEY = "braindump:data:v1";
 
-function read(): Snapshot {
+export function readLocalData(): Snapshot {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -16,9 +16,23 @@ function read(): Snapshot {
   return { lists: [], tasks: [], meta: EMPTY_META };
 }
 
+/** What this browser has that the account doesn't. The account's copy wins on any clash. */
+export function planUpload(local: Snapshot, cloud: { listIds: Set<string>; taskIds: Set<string>; meta: Meta | null }) {
+  const lists = local.lists.filter((l: List) => !cloud.listIds.has(l.id));
+  const tasks = local.tasks.filter((t: Task) => !cloud.taskIds.has(t.id));
+  const cloudContext = cloud.meta?.context ?? {};
+  const missing = Object.fromEntries(
+    Object.entries(local.meta?.context ?? {}).filter(([k, v]) => v && !cloudContext[k as keyof Meta["context"]]),
+  );
+  const meta: Meta | null = Object.keys(missing).length
+    ? { ...EMPTY_META, ...cloud.meta, context: { ...cloudContext, ...missing }, updatedAt: Date.now() }
+    : null;
+  return { lists, tasks, meta };
+}
+
 /** Saves everything in this browser only. Used until Firebase is configured. */
 export function createLocalBackend(): Backend {
-  let data = read();
+  let data = readLocalData();
   const subs = new Set<(s: Snapshot) => void>();
   const emit = () => {
     try {
@@ -38,7 +52,7 @@ export function createLocalBackend(): Backend {
   // Keep two open tabs in sync.
   window.addEventListener("storage", (e) => {
     if (e.key === KEY) {
-      data = read();
+      data = readLocalData();
       subs.forEach((cb) => cb({ ...data }));
     }
   });

@@ -16,6 +16,7 @@ import { fb, firebaseEnabled } from "./lib/storage/config";
 import { createLocalBackend } from "./lib/storage/local";
 import { descendantIds, isEffectivelyClosed, listPath } from "./lib/tree";
 import { connect, disconnect, useData } from "./state/store";
+import { toast } from "./state/ui";
 import { SPACES, type Place, type Task } from "./types";
 
 export type Scope = Place;
@@ -61,7 +62,12 @@ export default function App() {
       unsub = m.watchUser((u) => {
         setUser(u);
         setDenied(false);
-        if (u) connect(m.createFirebaseBackend(u.uid), () => setDenied(true));
+        if (u) {
+          connect(m.createFirebaseBackend(u.uid), () => setDenied(true));
+          m.uploadLocalData(u.uid)
+            .then((moved) => moved && toast(`Moved ${moved.tasks} tasks and ${moved.lists} lists from this browser to your account.`))
+            .catch((e) => console.warn("Will retry uploading this browser's data next launch", e));
+        }
         else disconnect();
       });
     });
@@ -218,7 +224,7 @@ function Main({ user }: { user: User | null }) {
         </section>
         <CaptureBar scope={scope} onOpenTask={setOpenTaskId} />
       </main>
-      {openTask && <TaskDetail task={openTask} onClose={() => setOpenTaskId(null)} onTag={(t) => { setTagFilter(t); setOpenTaskId(null); }} />}
+      {openTask && <TaskDetail key={openTask.id} task={openTask} onOpen={setOpenTaskId} onClose={() => setOpenTaskId(null)} onTag={(t) => { setTagFilter(t); setOpenTaskId(null); }} />}
       {about && <ContextPanel key={JSON.stringify(about)} place={about} onClose={() => setAbout(null)} />}
       <Toasts />
     </div>

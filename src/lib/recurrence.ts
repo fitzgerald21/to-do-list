@@ -99,7 +99,7 @@ export function firstDue(r: Repeat, from = todayIso()): string {
 
 /**
  * Checking off a repeating task: instead of finishing it, roll it forward to the next
- * date, reset the checklist and log the completion. Null = series over, finish normally.
+ * date and log the completion. Null = series over, finish normally.
  */
 export function rollForward(t: Task, now = Date.now()): Task | null {
   if (!t.repeat) return null;
@@ -111,7 +111,6 @@ export function rollForward(t: Task, now = Date.now()): Task | null {
     waitingOn: "",
     completedAt: null,
     dueDate: next,
-    subtasks: t.subtasks.map((s) => ({ ...s, done: false })),
     repeat: { ...t.repeat, done: (t.repeat.done ?? 0) + 1 },
     updates: [...t.updates, { id: uid(), at: now, text: `✓ Done. Repeats, next due ${prettyDay(next)}.` }],
     updatedAt: now,

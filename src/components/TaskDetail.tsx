@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { score, scoreColor } from "../lib/score";
-import { childrenOf, listPath, uid } from "../lib/tree";
-import { deleteTask, patchTask, saveTask, useData } from "../state/store";
+import { childrenOf, listPath, taskDescendantIds, uid } from "../lib/tree";
+import { deleteTask, dropItem, newTask, patchTask, saveTask, useData } from "../state/store";
 import { toast } from "../state/ui";
 import { SPACES, STATUSES, type List, type Status, type Task } from "../types";
 import { Composer } from "./Composer";
@@ -14,20 +14,38 @@ function useDraft(value: string, save: (v: string) => void) {
   return { value: v, onChange: (e: { target: { value: string } }) => setV(e.target.value), onBlur: () => v !== value && save(v) };
 }
 
-function Scale({ label, hint, value, onChange }: { label: string; hint: string; value: number; onChange: (n: number) => void }) {
+function Scale({ label, hint, value, onChange }: { label: string; hint: string; value: number | null; onChange: (n: number | null) => void }) {
   return (
-    <label className="scale">
+    <div className="scale">
       <span className="scale-label">
-        {label} <b>{value}</b>
+        {label} <b>{value ?? "not set"}</b>
         <span className="muted small"> {hint}</span>
       </span>
-      <input type="range" min={1} max={10} value={value} onChange={(e) => onChange(Number(e.target.value))} />
-    </label>
+      <div className="scale-picks" role="group" aria-label={label}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+          <button key={n} className={value === n ? "on" : ""} aria-pressed={value === n} onClick={() => onChange(value === n ? null : n)}>
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
-export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () => void; onTag: (t: string) => void }) {
-  const { lists } = useData();
+export function TaskDetail({
+  task,
+  onClose,
+  onTag,
+  onOpen,
+}: {
+  task: Task;
+  onClose: () => void;
+  onTag: (t: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const { lists, tasks } = useData();
+  const kids = tasks.filter((t) => t.parentId === task.id).sort((a, b) => a.order - b.order);
+  const parent = task.parentId ? tasks.find((t) => t.id === task.parentId) : null;
   const p = (patch: Partial<Task>) => void patchTask(task.id, patch);
   const title = useDraft(task.title, (v) => v.trim() && p({ title: v.trim() }));
   const notes = useDraft(task.notes, (v) => p({ notes: v }));
@@ -56,6 +74,9 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
     walk(null);
   }
 
+  const moveTo = (space: string, listId: string | null) =>
+    void dropItem({ kind: "task", id: task.id }, listId ? { kind: "list", id: listId, pos: "inside" } : { kind: "space", id: space, pos: "inside" });
+
   const addTags = () => {
     const tags = tagInput
       .split(/[,\s]+/)
@@ -83,6 +104,17 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
         </header>
 
         <div className="detail-body">
+          {parent && (
+            <div className="parent-line">
+              <span className="muted small">Sub-task of</span>
+              <button className="link" onClick={() => onOpen(parent.id)}>
+                {parent.title}
+              </button>
+              <button className="link small" onClick={() => moveTo(task.space, task.listId)}>
+                Make it its own task
+              </button>
+            </div>
+          )}
           <section className="talk">
             <h4>🎙 Talk about this</h4>
             <p className="muted small">
@@ -114,7 +146,7 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
                 value={`${task.space}:${task.listId ?? ""}`}
                 onChange={(e) => {
                   const [space, listId] = e.target.value.split(":");
-                  p({ space: space as Task["space"], listId: listId || null });
+                  moveTo(space, listId || null);
                 }}
               >
                 {places.map((pl) => (
@@ -133,10 +165,12 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
           <RepeatEditor task={task} onChange={(patch) => p(patch)} />
 
           <section className="scores">
-            <div className="score-big" style={{ color: scoreColor(s), borderColor: scoreColor(s) }}>
-              <b>{s}</b>
-              <span>score</span>
-            </div>
+            {s !== null && (
+              <div className="score-big" style={{ color: scoreColor(s), borderColor: scoreColor(s) }}>
+                <b>{s}</b>
+                <span>score</span>
+              </div>
+            )}
             <div className="scales">
               <Scale label="Priority" hint="how important" value={task.priority} onChange={(n) => p({ priority: n })} />
               <Scale label="Urgency" hint="how soon" value={task.urgency} onChange={(n) => p({ urgency: n })} />
@@ -169,17 +203,17 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
           </section>
 
           <section>
-            <h4>Checklist</h4>
-            {task.subtasks.map((st) => (
-              <div key={st.id} className={`subtask ${st.done ? "done" : ""}`}>
+            <h4>Sub-tasks</h4>
+            {kids.map((k) => (
+              <div key={k.id} className={`subtask ${k.status === "done" ? "done" : ""}`}>
                 <input
                   type="checkbox"
-                  checked={st.done}
-                  onChange={() => p({ subtasks: task.subtasks.map((x) => (x.id === st.id ? { ...x, done: !x.done } : x)) })}
+                  aria-label={`Mark ${k.title} done`}
+                  checked={k.status === "done"}
+                  onChange={() => void patchTask(k.id, { status: k.status === "done" ? "todo" : "done" })}
                 />
-                <span>{st.text}</span>
-                <button className="x" onClick={() => p({ subtasks: task.subtasks.filter((x) => x.id !== st.id) })}>
-                  ✕
+                <button className="subtask-title" onClick={() => onOpen(k.id)}>
+                  {k.title}
                 </button>
               </div>
             ))}
@@ -187,11 +221,11 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!subInput.trim()) return;
-                p({ subtasks: [...task.subtasks, { id: uid(), text: subInput.trim(), done: false }] });
+                void saveTask(newTask({ title: subInput.trim(), space: task.space, listId: task.listId, parentId: task.id }));
                 setSubInput("");
               }}
             >
-              <input className="inline-input wide" placeholder="＋ Add a step" value={subInput} onChange={(e) => setSubInput(e.target.value)} />
+              <input className="inline-input wide" placeholder="＋ Add a sub-task" value={subInput} onChange={(e) => setSubInput(e.target.value)} />
             </form>
           </section>
 
@@ -266,10 +300,12 @@ export function TaskDetail({ task, onClose, onTag }: { task: Task; onClose: () =
             <button
               className="btn danger"
               onClick={() => {
-                const copy = task;
-                void deleteTask(task.id);
+                const extra = taskDescendantIds(tasks, task.id).size - 1;
+                const removing = deleteTask(task.id);
                 onClose();
-                toast(`Deleted “${copy.title}”`, { action: { label: "Undo", run: () => void saveTask(copy) } });
+                toast(`Deleted “${task.title}”${extra ? ` and ${extra} sub-task${extra === 1 ? "" : "s"}` : ""}`, {
+                  action: { label: "Undo", run: () => void removing.then((removed) => removed.forEach(saveTask)) },
+                });
               }}
             >
               Delete

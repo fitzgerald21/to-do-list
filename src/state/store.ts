@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from "react";
 import type { Backend, Snapshot } from "../lib/storage/backend";
+import { migrateTasks } from "../lib/migrate";
+import { planMove, type DragItem, type DropTarget, type MovePlan } from "../lib/move";
 import { prettyDay, rollForward } from "../lib/recurrence";
-import { descendantIds, uid } from "../lib/tree";
+import { descendantIds, taskDescendantIds, uid } from "../lib/tree";
 import { toast } from "./ui";
-import { DEFAULT_SETTINGS, EMPTY_META, type List, type Meta, type Place, type Settings, type Space, type Task } from "../types";
+import { DEFAULT_SETTINGS, EMPTY_META, TASK_VERSION, type List, type Meta, type Place, type Settings, type Space, type Status, type Task } from "../types";
 
 // ---------------------------------------------------------------- data store
 
@@ -18,9 +20,17 @@ export function connect(b: Backend, onDenied?: () => void) {
   backend = b;
   snap = { lists: [], tasks: [], meta: EMPTY_META, ready: false };
   notify();
+  const converted = new Set<string>();
   unsub = b.subscribe((s) => {
-    snap = { ...s, ready: true };
+    const { tasks, changed } = migrateTasks(s.tasks);
+    snap = { ...s, tasks, ready: true };
     notify();
+    // Save each conversion once: saving can call straight back into here.
+    for (const t of changed) {
+      if (converted.has(t.id)) continue;
+      converted.add(t.id);
+      void b.putTask(t);
+    }
   }, onDenied);
   void loadSynced();
 }
@@ -59,18 +69,19 @@ export function newTask(partial: Partial<Task> & { title: string; space: Space }
     listId: null,
     status: "todo",
     waitingOn: "",
-    priority: 5,
-    effort: 5,
-    urgency: 5,
+    parentId: null,
+    priority: null,
+    effort: null,
+    urgency: null,
     tags: [],
     links: [],
-    subtasks: [],
     updates: [],
     dueDate: null,
     order: t,
     createdAt: t,
     updatedAt: t,
     completedAt: null,
+    v: TASK_VERSION,
     ...partial,
   };
 }
@@ -126,6 +137,24 @@ export async function setContext(p: Place, text: string) {
   await saveMeta({ ...snap.meta, context: { ...snap.meta.context, [key]: text }, updatedAt: now() });
 }
 
+/**
+ * What happens to a task's sub-tasks when it changes: finishing it finishes them, and starting
+ * a repeating task's next round starts its finished sub-tasks again.
+ */
+export function settleSubtasks(id: string, mode: "done" | "reset"): { before: Task[]; after: Task[] } {
+  const ids = taskDescendantIds(snap.tasks, id);
+  const before = snap.tasks.filter(
+    (t) => t.id !== id && ids.has(t.id) && (mode === "done" ? t.status !== "done" && !t.repeat : t.status === "done"),
+  );
+  const t = now();
+  const after = before.map((c) =>
+    mode === "done"
+      ? { ...c, status: "done" as Status, waitingOn: "", completedAt: t, updatedAt: t }
+      : { ...c, status: "todo" as Status, completedAt: null, updatedAt: t },
+  );
+  return { before, after };
+}
+
 export async function patchTask(id: string, patch: Partial<Task>) {
   const cur = snap.tasks.find((t) => t.id === id);
   if (!cur) return;
@@ -133,9 +162,10 @@ export async function patchTask(id: string, patch: Partial<Task>) {
   if (patch.status === "done" && cur.status !== "done" && cur.repeat) {
     const rolled = rollForward({ ...cur, ...patch });
     if (rolled) {
-      await saveTask(rolled);
+      const kids = settleSubtasks(id, "reset");
+      await Promise.all([saveTask(rolled), ...kids.after.map(saveTask)]);
       toast(`🔁 Done. Next: ${prettyDay(rolled.dueDate!)}`, {
-        action: { label: "Undo", run: () => void saveTask(cur) },
+        action: { label: "Undo", run: () => void Promise.all([cur, ...kids.before].map(saveTask)) },
       });
       return;
     }
@@ -146,7 +176,34 @@ export async function patchTask(id: string, patch: Partial<Task>) {
     if (patch.status !== "done") next.completedAt = null;
     if (patch.status !== "waiting" && patch.waitingOn === undefined) next.waitingOn = "";
   }
-  await saveTask(next);
+  const finishing = patch.status === "done" && cur.status !== "done";
+  const kids = finishing ? settleSubtasks(id, "done") : { before: [], after: [] };
+  await Promise.all([saveTask(next), ...kids.after.map(saveTask)]);
+  if (kids.after.length) {
+    toast(`Also finished ${kids.after.length} sub-task${kids.after.length === 1 ? "" : "s"}`, {
+      action: { label: "Undo", run: () => void Promise.all([cur, ...kids.before].map(saveTask)) },
+    });
+  }
+}
+
+/** Carries out a drag and drop. Moving somewhere new offers Undo; re-ordering among the same siblings doesn't need it. */
+export async function dropItem(item: DragItem, target: DropTarget): Promise<MovePlan | null> {
+  if (target.kind === "status") {
+    await patchTask(item.id, { status: target.id as Status });
+    return null;
+  }
+  const plan = planMove(item, target, snap.lists, snap.tasks);
+  if (!plan) return null;
+  const oldTasks = snap.tasks.filter((t) => plan.tasks.some((x) => x.id === t.id));
+  const oldLists = snap.lists.filter((l) => plan.lists.some((x) => x.id === l.id));
+  await Promise.all([...plan.lists.map(saveList), ...plan.tasks.map(saveTask)]);
+  if (plan.moved) {
+    toast(plan.label, {
+      ms: 5000,
+      action: { label: "Undo", run: () => void Promise.all([...oldLists.map(saveList), ...oldTasks.map(saveTask)]) },
+    });
+  }
+  return plan;
 }
 
 export async function patchList(id: string, patch: Partial<List>) {
@@ -155,10 +212,14 @@ export async function patchList(id: string, patch: Partial<List>) {
   await saveList({ ...cur, ...patch, updatedAt: now() });
 }
 
-export async function deleteTask(id: string) {
-  snap = { ...snap, tasks: snap.tasks.filter((t) => t.id !== id) };
+/** Deletes a task and its sub-tasks. Returns what it removed, so it can be put back. */
+export async function deleteTask(id: string): Promise<Task[]> {
+  const ids = taskDescendantIds(snap.tasks, id);
+  const removed = snap.tasks.filter((t) => ids.has(t.id));
+  snap = { ...snap, tasks: snap.tasks.filter((t) => !ids.has(t.id)) };
   notify();
-  await backend?.removeTask(id);
+  await Promise.all(removed.map((t) => backend?.removeTask(t.id)));
+  return removed;
 }
 
 export async function removeListOnly(id: string) {

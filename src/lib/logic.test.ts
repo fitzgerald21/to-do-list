@@ -58,7 +58,9 @@ describe("score", () => {
     expect(score({ priority: 10, urgency: 10, effort: 1 })).toBe(100);
     expect(score({ priority: 1, urgency: 1, effort: 10 })).toBe(0);
     expect(score({ priority: 5, urgency: 5, effort: 5 })).toBe(15);
-    expect(score({ priority: 8, urgency: 8, effort: 2 })).toBeGreaterThan(score({ priority: 8, urgency: 8, effort: 9 }));
+    expect(score({ priority: 8, urgency: 8, effort: 2 })!).toBeGreaterThan(score({ priority: 8, urgency: 8, effort: 9 })!);
+    expect(score({ priority: null, urgency: null, effort: null })).toBeNull();
+    expect(score({ priority: 8, urgency: null, effort: null })).toBe(24);
   });
   it("sorts by score then others", () => {
     const mk = (id: string, p: number, e: number, u: number) => ({ id, priority: p, effort: e, urgency: u, order: 0 }) as Task;
@@ -156,7 +158,7 @@ describe("tree + apply", () => {
     expect(t.waitingOn).toBe("Jordan");
     expect(t.updates).toHaveLength(1);
     expect(t.updates[0].raw).toContain("Michael");
-    expect(t.subtasks.map((s) => s.text)).toEqual(["Review pricing"]);
+    expect(getData().tasks.filter((x) => x.parentId === t.id).map((x) => x.title)).toEqual(["Review pricing"]);
 
     await receipt.undo();
     expect(getData().tasks[0]).toEqual(before);

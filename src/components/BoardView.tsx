@@ -1,15 +1,15 @@
-import { useState } from "react";
+import type { CSSProperties } from "react";
 import { sortTasks } from "../lib/score";
-import { pathLabel } from "../lib/tree";
+import { pathLabel, placeColor } from "../lib/tree";
+import { dropAttrs, startDrag } from "../state/dnd";
 import { patchTask, useData } from "../state/store";
 import { STATUSES, type Status } from "../types";
 import type { ViewProps } from "./ListView";
-import { RepeatChip, ScoreBadge, dueLabel } from "./TaskRow";
+import { DragHandle, RepeatChip, ScoreBadge, dueLabel } from "./TaskRow";
 
-/** Kanban by status. Drag cards on desktop, or use the status menu on phone. */
+/** Kanban by status. Drag cards between columns, or use the status menu. */
 export function BoardView({ tasks, onOpen, showDone }: ViewProps) {
-  const { lists } = useData();
-  const [over, setOver] = useState<Status | null>(null);
+  const { lists, tasks: allTasks } = useData();
   const cols = STATUSES.filter((s) => showDone || s.id !== "done");
 
   return (
@@ -20,21 +20,7 @@ export function BoardView({ tasks, onOpen, showDone }: ViewProps) {
           "score",
         );
         return (
-          <div
-            key={col.id}
-            className={`column ${over === col.id ? "over" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(col.id);
-            }}
-            onDragLeave={() => setOver(null)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOver(null);
-              const id = e.dataTransfer.getData("text/plain");
-              if (id) void patchTask(id, { status: col.id });
-            }}
-          >
+          <div key={col.id} className="column" {...dropAttrs("status", col.id)}>
             <header style={{ borderColor: col.color }}>
               <span className="dot" style={{ background: col.color }} />
               {col.label}
@@ -43,18 +29,22 @@ export function BoardView({ tasks, onOpen, showDone }: ViewProps) {
             <div className="cards">
               {items.map((t) => {
                 const due = dueLabel(t.dueDate);
+                const color = placeColor(lists, t.listId, t.space);
+                const parent = t.parentId ? allTasks.find((x) => x.id === t.parentId) : null;
                 return (
                   <div
                     key={t.id}
                     className="card"
-                    draggable
-                    onDragStart={(e) => e.dataTransfer.setData("text/plain", t.id)}
+                    style={{ "--c": color } as CSSProperties}
+                    onPointerDown={(e) => startDrag(e, { kind: "task", id: t.id, label: t.title, color })}
                     onClick={() => onOpen(t.id)}
                   >
                     <div className="card-top">
+                      <DragHandle />
                       <span className="card-title">{t.title}</span>
                       <ScoreBadge task={t} />
                     </div>
+                    {parent && <div className="path small">↳ {parent.title}</div>}
                     <div className="path small">{pathLabel(lists, t)}</div>
                     {t.waitingOn && <div className="small waiting">⏳ {t.waitingOn}</div>}
                     {t.updates.length > 0 && <div className="small muted clamp2">📝 {t.updates[t.updates.length - 1].text}</div>}

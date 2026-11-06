@@ -10,12 +10,13 @@ import {
   saveMeta,
   saveTask,
   setContext,
+  settleSubtasks,
 } from "../../state/store";
 import type { List, Meta, Place, Space, Task } from "../../types";
 import { toModelImages, type Attachment } from "../images";
 import { describeRepeat, firstDue, rollForward } from "../recurrence";
 import { clamp } from "../score";
-import { allTags, listPath, resolvePath, uid } from "../tree";
+import { allTags, listPath, resolvePath, taskDescendantIds, uid } from "../tree";
 import { parseOffline } from "./fallback";
 import { buildContextMessage, buildUserMessage, CONTEXT_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompt";
 import { AiError, callModel } from "./providers";
@@ -203,12 +204,11 @@ export async function applyResult(
         notes: a.notes ?? "",
         status: a.status ?? (a.waiting_on ? "waiting" : "todo"),
         waitingOn: a.waiting_on ?? "",
-        priority: clamp(a.priority ?? 5),
-        effort: clamp(a.effort ?? 5),
-        urgency: clamp(a.urgency ?? 5),
+        priority: a.priority ? clamp(a.priority) : null,
+        effort: a.effort ? clamp(a.effort) : null,
+        urgency: a.urgency ? clamp(a.urgency) : null,
         tags: [...new Set(a.tags)],
         links: a.links.map((l) => ({ url: withScheme(l.url), label: l.label || undefined })),
-        subtasks: a.subtasks.map((text) => ({ id: uid(), text, done: false })),
         dueDate: a.due_date,
         updates: a.progress_update ? [{ id: uid(), at: Date.now(), text: a.progress_update, raw: opts.raw }] : [],
       });
@@ -220,6 +220,7 @@ export async function applyResult(
       await saveTask(t);
       createdTasks.push(t.id);
       touched.push(t.id);
+      for (const c of await addSubtasks(t, a.subtasks)) createdTasks.push(c);
     } else if (a.kind === "update_task") {
       const id = a.task_id ?? opts.focusTaskId;
       const cur = getData().tasks.find((x) => x.id === id);
@@ -243,19 +244,18 @@ export async function applyResult(
       if (a.tags.length) next.tags = [...new Set([...cur.tags, ...a.tags])];
       if (a.links.length) next.links = [...cur.links, ...a.links.map((l) => ({ url: withScheme(l.url), label: l.label || undefined }))];
       if (a.notes) next.notes = cur.notes ? `${cur.notes.trimEnd()}\n\n${a.notes}` : a.notes;
-      if (a.subtasks.length) next.subtasks = [...cur.subtasks, ...a.subtasks.map((text) => ({ id: uid(), text, done: false }))];
-      if (a.complete_subtasks.length) {
-        next.subtasks = next.subtasks.map((s) =>
-          a.complete_subtasks.some((c) => norm(s.text).includes(norm(c)) || norm(c).includes(norm(s.text)))
-            ? { ...s, done: true }
-            : s,
-        );
-      }
       if (a.progress_update) next.updates = [...cur.updates, { id: uid(), at: Date.now(), text: a.progress_update, raw: opts.raw }];
       if (a.list_path.length) {
         const place = await ensurePath(a.list_path, cur.space, createdLists);
         next.space = place.space;
         next.listId = place.listId;
+        next.parentId = null;
+        const ids = taskDescendantIds(getData().tasks, cur.id);
+        for (const k of getData().tasks) {
+          if (k.id === cur.id || !ids.has(k.id)) continue;
+          if (!before.has(k.id)) before.set(k.id, k);
+          await saveTask({ ...k, space: place.space, listId: place.listId, updatedAt: Date.now() });
+        }
       }
       if (a.repeat_off) next.repeat = null;
       else if (a.repeat) {
@@ -263,9 +263,25 @@ export async function applyResult(
         if (!next.dueDate) next.dueDate = firstDue(a.repeat);
       }
       // "Done" on a repeating task moves it to its next date.
-      const rolled = next.status === "done" && cur.status !== "done" ? rollForward(next) : null;
+      const finishing = next.status === "done" && cur.status !== "done";
+      const rolled = finishing ? rollForward(next) : null;
       await saveTask(rolled ?? next);
       touched.push(next.id);
+      for (const c of await addSubtasks(rolled ?? next, a.subtasks)) createdTasks.push(c);
+      if (a.complete_subtasks.length) {
+        const ids = taskDescendantIds(getData().tasks, cur.id);
+        for (const k of getData().tasks) {
+          if (k.id === cur.id || !ids.has(k.id) || k.status === "done") continue;
+          if (!a.complete_subtasks.some((c) => norm(k.title).includes(norm(c)) || norm(c).includes(norm(k.title)))) continue;
+          if (!before.has(k.id)) before.set(k.id, k);
+          await saveTask({ ...k, status: "done", waitingOn: "", completedAt: Date.now(), updatedAt: Date.now() });
+        }
+      }
+      if (finishing) {
+        const kids = settleSubtasks(cur.id, rolled ? "reset" : "done");
+        for (const k of kids.before) if (!before.has(k.id)) before.set(k.id, k);
+        for (const k of kids.after) await saveTask(k);
+      }
     } else if (a.kind === "update_context" && a.context) {
       let place = contextPlace(a.list_path, settings.defaultSpace).place;
       if (!place) {
@@ -281,8 +297,7 @@ export async function applyResult(
     } else if (a.kind === "delete_task" && a.task_id) {
       const cur = getData().tasks.find((x) => x.id === a.task_id);
       if (!cur) continue;
-      if (!before.has(cur.id)) before.set(cur.id, cur);
-      await deleteTask(cur.id);
+      for (const removed of await deleteTask(cur.id)) if (!before.has(removed.id)) before.set(removed.id, removed);
     }
   }
 
@@ -296,6 +311,16 @@ export async function applyResult(
       for (const id of createdLists.reverse()) await removeListOnly(id);
     },
   };
+}
+
+async function addSubtasks(parent: Task, titles: string[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const [i, title] of titles.entries()) {
+    const c = newTask({ title, space: parent.space, listId: parent.listId, parentId: parent.id, order: Date.now() + i });
+    await saveTask(c);
+    ids.push(c.id);
+  }
+  return ids;
 }
 
 function withScheme(url: string) {

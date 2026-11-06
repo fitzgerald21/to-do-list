@@ -1,4 +1,4 @@
-import { SPACES, type List, type Space, type Task } from "../types";
+import { LIST_COLORS, SPACES, type List, type Space, type Task } from "../types";
 
 export const uid = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -23,6 +23,42 @@ export function descendantIds(lists: List[], id: string): Set<string> {
     }
   }
   return out;
+}
+
+/** All task ids under (and including) `id`: its sub-tasks, their sub-tasks and so on. */
+export function taskDescendantIds(tasks: Task[], id: string): Set<string> {
+  const out = new Set<string>([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const t of tasks) {
+      if (t.parentId && out.has(t.parentId) && !out.has(t.id)) {
+        out.add(t.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+/** The list's own color, else the nearest ancestor's, else the top-level list's turn in the palette. */
+export function listColor(lists: List[], id: string): string {
+  const byId = new Map(lists.map((l) => [l.id, l]));
+  let cur = byId.get(id);
+  let guard = 0;
+  while (cur && guard++ < 50) {
+    if (cur.color) return cur.color;
+    if (!cur.parentId) break;
+    cur = byId.get(cur.parentId);
+  }
+  if (!cur) return LIST_COLORS[0];
+  const roots = lists.filter((l) => !l.parentId).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  return LIST_COLORS[Math.max(0, roots.findIndex((l) => l.id === cur!.id)) % LIST_COLORS.length];
+}
+
+/** The color of wherever a task lives. */
+export function placeColor(lists: List[], listId: string | null, space: Space): string {
+  return listId ? listColor(lists, listId) : SPACES.find((s) => s.id === space)!.color;
 }
 
 /** ["Work", "Transformation", "Q4"] */

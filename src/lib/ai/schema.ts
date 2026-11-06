@@ -23,9 +23,9 @@ export interface AiAction {
   tags: string[];
   links: { url: string; label: string }[];
   due_date: string | null;
-  /** Checklist items to add. */
+  /** Titles of sub-tasks to add. */
   subtasks: string[];
-  /** Checklist items (by text) to tick off. */
+  /** Existing sub-tasks (by title) to mark done. */
   complete_subtasks: string[];
   /** update_context: new background facts to add to the topic's About doc. */
   context: string | null;

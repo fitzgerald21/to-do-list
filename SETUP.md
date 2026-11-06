@@ -15,7 +15,7 @@ Sharing the project comes with four rules:
 
 Data lives at `users/{uid}/lists`, `users/{uid}/tasks` and `users/{uid}/private/{settings,meta}`, which don't overlap with the other apps.
 
-If you used the browser-only version before, open **⚙️ Settings → Sync & account** on that browser and choose **Move them to my account**.
+Anything saved in a browser before sign-in uploads automatically the first time you sign in on that browser. It only adds what the account doesn't already have, and the browser's copy stays in place as a backup.
 
 ## Run it locally
 

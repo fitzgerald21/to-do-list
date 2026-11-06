@@ -14,21 +14,27 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
+  getDocsFromServer,
   initializeFirestore,
   onSnapshot,
   persistentLocalCache,
   persistentMultipleTabManager,
   setDoc,
+  writeBatch,
   type Firestore,
 } from "firebase/firestore";
 import { EMPTY_META, type List, type Meta, type Task } from "../../types";
 import type { Backend, Snapshot } from "./backend";
 
 import { firebaseConfig, firebaseEnabled } from "./config";
+import { planUpload, readLocalData } from "./local";
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
+
+const UPLOAD_BATCH = 200;
 
 function init() {
   if (!firebaseEnabled) throw new Error("Firebase is not configured");
@@ -68,6 +74,42 @@ export async function signInGoogle() {
 
 export function logOut() {
   return signOut(init().auth);
+}
+
+/**
+ * Copies what this browser saved before sign-in into the account, once per account on each device.
+ * Reading from the server first also proves this account has access. It only counts as done once the server
+ * has confirmed every write, so a failure tries again next launch. The browser's copy stays as a backup.
+ */
+export async function uploadLocalData(uidStr: string) {
+  const flag = `braindump:uploaded:${uidStr}`;
+  if (localStorage.getItem(flag)) return null;
+  const local = readLocalData();
+  if (!local.lists.length && !local.tasks.length && !Object.values(local.meta?.context ?? {}).some(Boolean)) return null;
+
+  const { db } = init();
+  const listsCol = collection(db, "users", uidStr, "lists");
+  const tasksCol = collection(db, "users", uidStr, "tasks");
+  const metaDoc = doc(db, "users", uidStr, "private", "meta");
+  const [cloudLists, cloudTasks, cloudMeta] = await Promise.all([getDocsFromServer(listsCol), getDocsFromServer(tasksCol), getDocFromServer(metaDoc)]);
+  const { lists, tasks, meta } = planUpload(local, {
+    listIds: new Set(cloudLists.docs.map((d) => d.id)),
+    taskIds: new Set(cloudTasks.docs.map((d) => d.id)),
+    meta: cloudMeta.exists() ? (cloudMeta.data() as Meta) : null,
+  });
+
+  const writes = [
+    ...lists.map((l) => [doc(listsCol, l.id), l] as const),
+    ...tasks.map((t) => [doc(tasksCol, t.id), t] as const),
+    ...(meta ? [[metaDoc, meta] as const] : []),
+  ];
+  for (let i = 0; i < writes.length; i += UPLOAD_BATCH) {
+    const batch = writeBatch(db);
+    for (const [ref, data] of writes.slice(i, i + UPLOAD_BATCH)) batch.set(ref, data);
+    await batch.commit();
+  }
+  localStorage.setItem(flag, String(Date.now()));
+  return writes.length ? { lists: lists.length, tasks: tasks.length } : null;
 }
 
 export function createFirebaseBackend(uidStr: string): Backend {

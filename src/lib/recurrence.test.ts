@@ -55,13 +55,12 @@ describe("rollForward + describe", () => {
   it("resets the task and logs the completion", () => {
     const t = {
       id: "t", title: "Status email to Kathy", notes: "", space: "work", listId: null, status: "in_progress", waitingOn: "",
-      priority: 5, effort: 5, urgency: 5, tags: [], links: [], subtasks: [{ id: "s", text: "Pull numbers", done: true }], updates: [],
+      priority: 5, effort: 5, urgency: 5, tags: [], links: [], updates: [],
       dueDate: "2026-11-06", repeat: R({ freq: "week", weekdays: [5] }), order: 0, createdAt: 0, updatedAt: 0, completedAt: null,
     } as Task;
     const next = rollForward(t, new Date(2026, 10, 6, 15).getTime())!;
     expect(next.dueDate).toBe("2026-11-13");
     expect(next.status).toBe("todo");
-    expect(next.subtasks[0].done).toBe(false);
     expect(next.repeat!.done).toBe(1);
     expect(next.updates[0].text).toMatch(/Repeats, next due/);
   });

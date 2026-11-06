@@ -1,9 +1,18 @@
 export type Space = "work" | "personal";
 
-export const SPACES: { id: Space; name: string; emoji: string }[] = [
-  { id: "work", name: "Work", emoji: "💼" },
-  { id: "personal", name: "Personal", emoji: "🏡" },
+export const SPACES: { id: Space; name: string; emoji: string; color: string }[] = [
+  { id: "work", name: "Work", emoji: "💼", color: "#6366f1" },
+  { id: "personal", name: "Personal", emoji: "🏡", color: "#10b981" },
 ];
+
+/** Colors for lists. Top-level lists take these in turn until you pick one. */
+export const LIST_COLORS = [
+  "#3b82f6", "#f97316", "#8b5cf6", "#14b8a6", "#ec4899", "#eab308",
+  "#ef4444", "#06b6d4", "#84cc16", "#d946ef", "#a16207", "#64748b",
+];
+
+/** Bumped when a saved task needs converting. See lib/migrate.ts. */
+export const TASK_VERSION = 2;
 
 export type Status = "todo" | "in_progress" | "waiting" | "blocked" | "done";
 
@@ -21,6 +30,7 @@ export interface List {
   name: string;
   space: Space;
   parentId: string | null;
+  /** Empty = inherit from the parent list, or take the next color in LIST_COLORS at the top level. */
   color?: string;
   /** "Closed" lists are hidden from the main views but kept. */
   closed: boolean;
@@ -47,7 +57,8 @@ export interface Link {
   label?: string;
 }
 
-export interface Subtask {
+/** The old checklist item. Saved tasks may still have these until lib/migrate.ts converts them. */
+export interface LegacyChecklistItem {
   id: string;
   text: string;
   done: boolean;
@@ -103,17 +114,19 @@ export interface Task {
   space: Space;
   /** null = sits directly under the space (Work / Personal) root. */
   listId: string | null;
+  /** Set = this is a sub-task of that task. It shares the parent's list and space. */
+  parentId?: string | null;
   status: Status;
   waitingOn: string;
-  /** 1–10, how important. */
-  priority: number;
-  /** 1–10, how much work (10 = huge). */
-  effort: number;
-  /** 1–10, how soon it needs to happen ("speed"). */
-  urgency: number;
+  /** 1–10, how important. null = not set. */
+  priority: number | null;
+  /** 1–10, how much work (10 = huge). null = not set. */
+  effort: number | null;
+  /** 1–10, how soon it needs to happen ("speed"). null = not set. */
+  urgency: number | null;
   tags: string[];
   links: Link[];
-  subtasks: Subtask[];
+  subtasks?: LegacyChecklistItem[];
   updates: UpdateEntry[];
   dueDate: string | null; // YYYY-MM-DD
   /** Recurring: checking it off rolls it forward to the next date. */
@@ -122,6 +135,7 @@ export interface Task {
   createdAt: number;
   updatedAt: number;
   completedAt: number | null;
+  v?: number;
 }
 
 export type ProviderId = "anthropic" | "openrouter" | "deepinfra";

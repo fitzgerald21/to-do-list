@@ -8,8 +8,8 @@ type Preset = "all" | "top" | "quick" | "waiting" | "due" | "progress" | "recent
 
 const PRESETS: { id: Preset; label: string; hint: string; filter: (t: Task) => boolean }[] = [
   { id: "all", label: "All", hint: "Every task, ranked", filter: () => true },
-  { id: "top", label: "🔥 Top", hint: "Score 35+", filter: (t) => score(t) >= 35 },
-  { id: "quick", label: "⚡ Quick wins", hint: "Effort ≤ 3 and priority ≥ 5", filter: (t) => t.effort <= 3 && t.priority >= 5 },
+  { id: "top", label: "🔥 Top", hint: "Score 35+", filter: (t) => (score(t) ?? 0) >= 35 },
+  { id: "quick", label: "⚡ Quick wins", hint: "Effort ≤ 3 and priority ≥ 5", filter: (t) => (t.effort ?? 11) <= 3 && (t.priority ?? 0) >= 5 },
   { id: "waiting", label: "⏳ Waiting on", hint: "Waiting or blocked", filter: (t) => t.status === "waiting" || t.status === "blocked" },
   { id: "progress", label: "▶ In progress", hint: "Started", filter: (t) => t.status === "in_progress" },
   {
