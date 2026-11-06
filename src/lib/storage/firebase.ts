@@ -1,0 +1,135 @@
+import { initializeApp, type FirebaseApp } from "firebase/app";
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  type Auth,
+  type User,
+} from "firebase/auth";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  initializeFirestore,
+  onSnapshot,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  setDoc,
+  type Firestore,
+} from "firebase/firestore";
+import type { List, Task } from "../../types";
+import type { Backend, Snapshot } from "./backend";
+
+import { firebaseConfig, firebaseEnabled } from "./config";
+
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
+
+function init() {
+  if (!firebaseEnabled) throw new Error("Firebase is not configured");
+  if (!app) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    // Offline-first: works with no signal and syncs when back online.
+    db = initializeFirestore(app, {
+      ignoreUndefinedProperties: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  }
+  return { auth: auth!, db: db! };
+}
+
+export function watchUser(cb: (u: User | null) => void): () => void {
+  return onAuthStateChanged(init().auth, cb);
+}
+
+export async function signInGoogle() {
+  const { auth } = init();
+  const provider = new GoogleAuthProvider();
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone;
+  // Popups don't work inside an installed (home-screen) app.
+  if (standalone) return signInWithRedirect(auth, provider);
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    const code = (e as { code?: string }).code ?? "";
+    if (code.includes("popup")) return signInWithRedirect(auth, provider);
+    throw e;
+  }
+}
+
+export async function signInEmail(email: string, password: string, create: boolean) {
+  const { auth } = init();
+  if (create) await createUserWithEmailAndPassword(auth, email, password);
+  else await signInWithEmailAndPassword(auth, email, password);
+}
+
+export function logOut() {
+  return signOut(init().auth);
+}
+
+export function createFirebaseBackend(uidStr: string): Backend {
+  const { db } = init();
+  const listsCol = collection(db, "users", uidStr, "lists");
+  const tasksCol = collection(db, "users", uidStr, "tasks");
+  const settingsDoc = doc(db, "users", uidStr, "private", "settings");
+
+  return {
+    kind: "firebase",
+    subscribe(cb) {
+      let lists: List[] = [];
+      let tasks: Task[] = [];
+      let gotLists = false;
+      let gotTasks = false;
+      const emit = () => gotLists && gotTasks && cb({ lists, tasks } satisfies Snapshot);
+      const u1 = onSnapshot(listsCol, (s) => {
+        lists = s.docs.map((d) => d.data() as List);
+        gotLists = true;
+        emit();
+      });
+      const u2 = onSnapshot(tasksCol, (s) => {
+        tasks = s.docs.map((d) => d.data() as Task);
+        gotTasks = true;
+        emit();
+      });
+      return () => {
+        u1();
+        u2();
+      };
+    },
+    // Writes resolve once queued locally, so the UI never waits on the network.
+    async putList(l) {
+      void setDoc(doc(listsCol, l.id), l);
+    },
+    async putTask(t) {
+      void setDoc(doc(tasksCol, t.id), t);
+    },
+    async removeList(id) {
+      void deleteDoc(doc(listsCol, id));
+    },
+    async removeTask(id) {
+      void deleteDoc(doc(tasksCol, id));
+    },
+    async loadSyncedSettings() {
+      try {
+        const s = await getDoc(settingsDoc);
+        return s.exists() ? (s.data() as never) : null;
+      } catch {
+        return null;
+      }
+    },
+    async saveSyncedSettings(s) {
+      if (s === null) void deleteDoc(settingsDoc);
+      else void setDoc(settingsDoc, s, { merge: true });
+    },
+  };
+}
