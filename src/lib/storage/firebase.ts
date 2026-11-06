@@ -1,10 +1,8 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
   GoogleAuthProvider,
-  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
-  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -35,7 +33,10 @@ let db: Firestore | null = null;
 function init() {
   if (!firebaseEnabled) throw new Error("Firebase is not configured");
   if (!app) {
-    app = initializeApp(firebaseConfig);
+    // Named, not the default app: Come back, Little Bites, One Line a Day and Recipe Book share this Firebase
+    // project and this site's origin. The default name would share their browser sign-in and offline cache,
+    // and this newer SDK would upgrade the cache past what theirs can read.
+    app = initializeApp(firebaseConfig, "brain-dump");
     auth = getAuth(app);
     // Offline-first: works with no signal and syncs when back online.
     db = initializeFirestore(app, {
@@ -53,24 +54,16 @@ export function watchUser(cb: (u: User | null) => void): () => void {
 export async function signInGoogle() {
   const { auth } = init();
   const provider = new GoogleAuthProvider();
-  const standalone =
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone;
-  // Popups don't work inside an installed (home-screen) app.
-  if (standalone) return signInWithRedirect(auth, provider);
+  // Popup first, even in an installed (home-screen) app: Safari blocks the redirect flow when the app and
+  // authDomain are on different sites, as they are here.
   try {
     await signInWithPopup(auth, provider);
   } catch (e) {
     const code = (e as { code?: string }).code ?? "";
-    if (code.includes("popup")) return signInWithRedirect(auth, provider);
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return;
+    if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") return signInWithRedirect(auth, provider);
     throw e;
   }
-}
-
-export async function signInEmail(email: string, password: string, create: boolean) {
-  const { auth } = init();
-  if (create) await createUserWithEmailAndPassword(auth, email, password);
-  else await signInWithEmailAndPassword(auth, email, password);
 }
 
 export function logOut() {
@@ -86,7 +79,10 @@ export function createFirebaseBackend(uidStr: string): Backend {
 
   return {
     kind: "firebase",
-    subscribe(cb) {
+    subscribe(cb, onDenied) {
+      const fail = (e: { code: string }) => {
+        if (e.code === "permission-denied") onDenied?.();
+      };
       let lists: List[] = [];
       let tasks: Task[] = [];
       let meta: Meta = EMPTY_META;
@@ -98,12 +94,12 @@ export function createFirebaseBackend(uidStr: string): Backend {
         lists = s.docs.map((d) => d.data() as List);
         gotLists = true;
         emit();
-      });
+      }, fail);
       const u2 = onSnapshot(tasksCol, (s) => {
         tasks = s.docs.map((d) => d.data() as Task);
         gotTasks = true;
         emit();
-      });
+      }, fail);
       const u3 = onSnapshot(
         metaDoc,
         (s) => {

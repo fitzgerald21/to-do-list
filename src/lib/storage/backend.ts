@@ -8,7 +8,7 @@ export interface Snapshot {
 
 export interface Backend {
   kind: "local" | "firebase";
-  subscribe(cb: (s: Snapshot) => void): () => void;
+  subscribe(cb: (s: Snapshot) => void, onDenied?: () => void): () => void;
   putList(l: List): Promise<void>;
   putTask(t: Task): Promise<void>;
   removeList(id: string): Promise<void>;

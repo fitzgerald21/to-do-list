@@ -53,7 +53,7 @@ To set up Firebase sync, deploy, install on your phone and add API keys, see **[
 ```bash
 npm test          # unit tests (parser, path matching, scoring, apply/undo)
 npm run build     # type-check + production build
-npm run deploy    # build + firebase deploy
+npm run deploy:rules  # deploy the Firestore rules shared with the other apps (see SETUP.md)
 ```
 
 Code layout:

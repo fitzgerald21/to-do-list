@@ -47,6 +47,7 @@ function savePref(key: string, v: unknown) {
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(firebaseEnabled ? undefined : null);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     if (!firebaseEnabled) {
@@ -59,7 +60,8 @@ export default function App() {
       if (cancelled) return;
       unsub = m.watchUser((u) => {
         setUser(u);
-        if (u) connect(m.createFirebaseBackend(u.uid));
+        setDenied(false);
+        if (u) connect(m.createFirebaseBackend(u.uid), () => setDenied(true));
         else disconnect();
       });
     });
@@ -71,6 +73,7 @@ export default function App() {
 
   if (firebaseEnabled && user === undefined) return <div className="splash">Loading…</div>;
   if (firebaseEnabled && !user) return <AuthScreen />;
+  if (denied) return <AuthScreen deniedEmail={user?.email ?? "This account"} />;
   return <Main user={user ?? null} />;
 }
 

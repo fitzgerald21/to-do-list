@@ -13,7 +13,7 @@ const subs = new Set<() => void>();
 const notify = () => subs.forEach((f) => f());
 let unsub: (() => void) | null = null;
 
-export function connect(b: Backend) {
+export function connect(b: Backend, onDenied?: () => void) {
   unsub?.();
   backend = b;
   snap = { lists: [], tasks: [], meta: EMPTY_META, ready: false };
@@ -21,7 +21,7 @@ export function connect(b: Backend) {
   unsub = b.subscribe((s) => {
     snap = { ...s, ready: true };
     notify();
-  });
+  }, onDenied);
   void loadSynced();
 }
 
