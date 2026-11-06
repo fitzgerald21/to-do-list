@@ -5,3 +5,4 @@ dev-dist
 .env.local
 .firebase
 *.log
+*.tsbuildinfo
