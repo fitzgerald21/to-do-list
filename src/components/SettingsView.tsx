@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "firebase/auth";
 import { fetchModels, formatPrice, type ModelOption } from "../lib/ai/models";
 import { PROVIDERS } from "../lib/ai/providers";
+import { GROQ_MODELS, testGroqKey } from "../lib/groq";
 import { fb, firebaseEnabled } from "../lib/storage/config";
 import { getData, saveList, saveMeta, saveTask, updateSettings, useSettings } from "../state/store";
 import { toast } from "../state/ui";
@@ -201,6 +202,7 @@ export function SettingsView({ user }: { user: User | null }) {
             ))}
           </select>
         </label>
+        <GroqVoice />
         <label className="field">
           Voice language
           <select value={s.speechLang} onChange={(e) => set({ speechLang: e.target.value })}>
@@ -257,5 +259,69 @@ export function SettingsView({ user }: { user: User | null }) {
         </p>
       </section>
     </div>
+  );
+}
+
+/** Groq Whisper key + model for dictation. */
+function GroqVoice() {
+  const s = useSettings();
+  const [show, setShow] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const has = !!s.groqKey.trim();
+  return (
+    <>
+      <label className="field">
+        Groq API key for dictation (optional){" "}
+        <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="small">
+          get one ↗
+        </a>
+        <div className="key-row">
+          <input
+            type={show ? "text" : "password"}
+            placeholder="gsk_…"
+            value={s.groqKey}
+            onChange={(e) => updateSettings({ groqKey: e.target.value.trim() })}
+            autoComplete="off"
+          />
+          <button className="btn" onClick={() => setShow(!show)}>
+            {show ? "Hide" : "Show"}
+          </button>
+          <button
+            className="btn"
+            disabled={!has || testing}
+            onClick={async () => {
+              setTesting(true);
+              try {
+                await testGroqKey(s.groqKey.trim());
+                toast("Groq key works. 🎙 now uses Whisper.");
+              } catch (e) {
+                toast((e as Error).message, { error: true, ms: 7000 });
+              } finally {
+                setTesting(false);
+              }
+            }}
+          >
+            {testing ? "Testing…" : "Test"}
+          </button>
+        </div>
+      </label>
+      {has ? (
+        <label className="field">
+          Whisper model
+          <select value={s.groqModel} onChange={(e) => updateSettings({ groqModel: e.target.value })}>
+            {GROQ_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <p className="muted small" style={{ marginTop: 0 }}>
+        {has
+          ? "🎙 records what you say and Groq's Whisper writes it out when you tap ■. It's better with names and long rambles, but the text appears when you stop, not while you talk. Without internet it falls back to your browser's voice typing."
+          : "Without a Groq key, 🎙 uses your browser's built-in voice typing. Add a key to use Whisper, which is more accurate, especially with names."}
+      </p>
+    </>
   );
 }

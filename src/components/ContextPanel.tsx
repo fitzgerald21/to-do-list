@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { organizeContext } from "../lib/ai/interpret";
-import { useDictation } from "../lib/speech";
+import { whisperPrompt } from "../lib/groq";
+import { fmtElapsed, useDictation } from "../lib/speech";
 import { listPath } from "../lib/tree";
 import { getContext, setContext, useData, useSettings } from "../state/store";
 import { toast } from "../state/ui";
@@ -37,15 +38,22 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
   const [before, setBefore] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const dict = useDictation(settings.speechLang, setDoc);
+  const dict = useDictation(settings.speechLang, setDoc, whisperPrompt(lists.map((l) => l.name)));
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { name, path } = placeName(place, lists);
   const hasKey = !!settings.keys[settings.provider]?.trim();
 
   const docRef = useRef(doc);
   docRef.current = doc;
-  const close = () => {
-    dict.stop();
+  const closing = useRef(false);
+  const close = async () => {
+    if (closing.current) return;
+    closing.current = true;
+    // Finish any recording first so what you just said is saved too.
+    if (dict.listening) {
+      const said = await dict.stop();
+      if (said !== null) docRef.current = said;
+    }
     const v = docRef.current.trim();
     if (v !== getContext(place).trim()) {
       void setContext(place, v);
@@ -55,23 +63,28 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && void close();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const organize = async () => {
-    if (dict.listening) dict.stop();
+    let text = doc;
+    if (dict.listening) {
+      const said = await dict.stop();
+      if (said === null) return;
+      text = said;
+    }
     setBusy(true);
     setNote(null);
     try {
       // Anything typed/said after the saved doc is the "new material".
       const base = saved.trim();
-      const cur = doc.trim();
+      const cur = text.trim();
       const [existing, added] = base && cur.startsWith(base) ? [base, cur.slice(base.length)] : ["", cur];
       const r = await organizeContext(path, existing, added);
-      setBefore(doc);
+      setBefore(text);
       setDoc(r.context);
       setNote(r.reply || "Organized. Check it over, then close to save.");
     } catch (e) {
@@ -82,7 +95,7 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
   };
 
   return (
-    <div className="detail-wrap" onClick={close}>
+    <div className="detail-wrap" onClick={() => void close()}>
       <aside className="detail" onClick={(e) => e.stopPropagation()}>
         <header className="detail-head">
           <div style={{ flex: 1 }}>
@@ -92,7 +105,7 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
             </div>
             {place.kind === "list" && <div className="path">{path}</div>}
           </div>
-          <button className="icon-btn" onClick={close} aria-label="Close">
+          <button className="icon-btn" onClick={() => void close()} aria-label="Close">
             ✕
           </button>
         </header>
@@ -111,11 +124,11 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
                   }, 0);
                 }
               }}
-              disabled={busy}
+              disabled={busy || dict.transcribing}
             >
-              {dict.listening ? "■ Stop" : "🎙 Talk"}
+              {dict.transcribing ? "Transcribing…" : dict.listening ? "■ Stop" : "🎙 Talk"}
             </button>
-            <button className="btn primary" onClick={() => void organize()} disabled={busy || !doc.trim() || !hasKey} title={hasKey ? "" : "Needs an AI key (Settings)"}>
+            <button className="btn primary" onClick={() => void organize()} disabled={busy || dict.transcribing || (!doc.trim() && !dict.listening) || !hasKey} title={hasKey ? "" : "Needs an AI key (Settings)"}>
               {busy ? "Organizing…" : "✨ Organize"}
             </button>
             {before !== null && (
@@ -131,12 +144,31 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
               </button>
             )}
             <span className="grow" />
-            <button className="btn" onClick={close}>
+            <button className="btn" onClick={() => void close()}>
               Done
             </button>
           </div>
-          {dict.listening && <div className="hint">Listening… keep talking, tap ■ Stop when you're done.</div>}
-          {dict.error && <div className="error-text small">{dict.error}</div>}
+          {dict.listening && (
+            <div className="hint">
+              {dict.engine === "whisper" ? `Recording ${fmtElapsed(dict.elapsed)}…` : "Listening…"} keep talking, tap ■ Stop when you're done.
+            </div>
+          )}
+          {dict.error && (
+            <div className="error-text small dict-error">
+              {dict.error}
+              {dict.canRetry && (
+                <>
+                  {" "}
+                  <button className="btn" onClick={() => void dict.retry()}>
+                    Retry
+                  </button>
+                  <button className="btn" onClick={dict.discard}>
+                    Discard recording
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {note && <div className="about-note">{note}</div>}
           <textarea
             ref={taRef}
@@ -144,7 +176,7 @@ export function ContextPanel({ place, onClose }: { place: Place; onClose: () => 
             value={doc}
             onChange={(e) => setDoc(e.target.value)}
             placeholder={EXAMPLE[place.kind]}
-            disabled={busy}
+            disabled={busy || dict.transcribing}
           />
           <p className="muted small" style={{ margin: 0 }}>
             You can also add to this from the main bar: “for Transformation, Lisa is taking over the vendor side.” Saves when you close.

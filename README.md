@@ -19,7 +19,7 @@ The task changes to **Waiting · Jordan**. A dated line goes into its progress l
 ## Features
 
 - **Two main branches, Work and Personal**, with lists and sub-lists nested as deep as you like. Lists can be closed (archived) and reopened.
-- **Capture by voice or typing**, on your phone or computer. You can add several to-dos at once, name the list ("under X", "add to X") and say the priority, effort, urgency, tags, due date ("next Tuesday"), links or sub-tasks. New tasks go into the list you're currently looking at unless you name another.
+- **Capture by voice or typing**, on your phone or computer. Voice uses Groq's Whisper if you add a Groq key (more accurate, especially with names), otherwise the browser's speech recognition. You can add several to-dos at once, name the list ("under X", "add to X") and say the priority, effort, urgency, tags, due date ("next Tuesday"), links or sub-tasks. New tasks go into the list you're currently looking at unless you name another.
 - **Screenshots and pasted text**: tap 📎 (or paste / drag an image in) to attach screenshots. Long scrolling screenshots are cut into readable pieces. Paste whole emails or chat logs into the box. Works in the main bar and inside a task ("here's Jordan's reply").
 - **Background docs**: one for **About me**, one each for **Work** and **Personal**, and one for every list. Talk or type, then **✨ Organize**. You can also add to them from the main bar ("for Transformation, Lisa is taking over the vendor side"). The AI uses them to route to-dos and to fix mis-heard names.
 - **Updates by voice**: mark tasks done, say who you're waiting on, move tasks, add notes. This works from the main bar or from inside a task.
@@ -77,7 +77,8 @@ src/
   lib/recurrence.ts       repeat rules: next date, presets, plain-English labels
   lib/images.ts           shrink / slice screenshots before sending
   components/ContextPanel background ("About") doc editor
-  lib/speech.ts           continuous dictation (Web Speech API)
+  lib/speech.ts           dictation: Groq Whisper (record → transcribe) or Web Speech API
+  lib/groq.ts             Groq Whisper transcription client
   lib/score.ts, tree.ts   score/sorting, list tree + fuzzy path matching
   components/             UI
 ```

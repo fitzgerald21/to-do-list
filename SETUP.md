@@ -52,4 +52,5 @@ Without a key the app still works with a simple built-in parser: `add <task> und
 ## Voice input notes
 
 - Tap 🎙, talk as long as you like (it keeps listening through pauses), tap ■ to send.
-- Uses the browser's built-in speech recognition (Chrome, Edge, Safari). If it isn't available — e.g. Firefox, or some iPhone home-screen setups — just tap the text box and use the **microphone on your phone's keyboard**; it works just as well.
+- **With a Groq key (recommended):** Settings → 🎙 Capture → *Groq API key for dictation*. Get a key at <https://console.groq.com/keys>, paste it in and tap **Test**. 🎙 then records your voice and sends it to Groq's Whisper when you tap ■. It's much better with names and long rambles. The text appears when you stop, not while you talk. Whisper is given your list names and the people you're waiting on, so it spells them right. If an upload fails, the recording is kept: tap **Retry**. The key stays in your browser (and syncs only if you turn on key sync). It's sent only to api.groq.com.
+- **Without a Groq key**, or when you're offline, it uses the browser's built-in speech recognition (Chrome, Edge, Safari), which shows words as you talk. If that isn't available (e.g. Firefox, or some iPhone home-screen setups), tap the text box and use the **microphone on your phone's keyboard**.

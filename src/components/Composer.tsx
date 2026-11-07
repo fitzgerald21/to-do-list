@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { applyResult, describe, interpret, type InterpretOptions } from "../lib/ai/interpret";
 import type { AiResult } from "../lib/ai/schema";
 import { prepareImage, type Attachment } from "../lib/images";
-import { useDictation } from "../lib/speech";
-import { getSettings, useSettings } from "../state/store";
+import { whisperPrompt } from "../lib/groq";
+import { fmtElapsed, useDictation } from "../lib/speech";
+import { getSettings, useData, useSettings } from "../state/store";
 import { toast } from "../state/ui";
 
 interface Pending {
@@ -51,7 +52,13 @@ export function Composer({
       }
     }
   };
-  const dict = useDictation(settings.speechLang, setText);
+  const { lists, tasks } = useData();
+  // Names Whisper should spell right: your lists, plus people you're waiting on.
+  const hint = useMemo(
+    () => whisperPrompt([...lists.map((l) => l.name), ...tasks.filter((t) => t.status !== "done").map((t) => t.waitingOn ?? "")]),
+    [lists, tasks],
+  );
+  const dict = useDictation(settings.speechLang, setText, hint);
 
   const commit = async (p: Pending) => {
     const n0 = p.attachments.length;
@@ -72,9 +79,19 @@ export function Composer({
   };
 
   const submit = async (value = text) => {
+    if (busy || dict.transcribing) return;
+    if (dict.listening) {
+      const said = await dict.stop();
+      if (said === null) return; // transcription failed; the recording is kept for Retry
+      value = said;
+    }
+    return send(value);
+  };
+
+  /** Send text (already transcribed) to the AI. */
+  const send = async (value: string) => {
     const raw = value.trim();
-    if ((!raw && !attachments.length) || busy) return;
-    if (dict.listening) dict.stop();
+    if (!raw && !attachments.length) return;
     setBusy(true);
     const atts = attachments;
     try {
@@ -96,11 +113,11 @@ export function Composer({
     }
   };
 
-  const toggleMic = () => {
+  const toggleMic = async () => {
     if (dict.listening) {
-      dict.stop();
       // Stopping the mic sends what you said.
-      setTimeout(() => void submit(taRef.current?.value ?? text), 250);
+      const said = await dict.stop();
+      if (said !== null) void send(said);
     } else {
       setExpanded(true);
       dict.start(text);
@@ -191,7 +208,28 @@ export function Composer({
           </div>
         </div>
       )}
-      {dict.error && <div className="error-text small">{dict.error}</div>}
+      {dict.error && (
+        <div className="error-text small dict-error">
+          {dict.error}
+          {dict.canRetry && (
+            <>
+              {" "}
+              <button
+                className="btn"
+                onClick={async () => {
+                  const said = await dict.retry();
+                  if (said !== null) void send(said);
+                }}
+              >
+                Retry
+              </button>
+              <button className="btn" onClick={dict.discard}>
+                Discard recording
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="attachments">
           {attachments.map((a) => (
@@ -236,7 +274,11 @@ export function Composer({
               ? attachments.length
                 ? "Reading…"
                 : "Thinking…"
-              : dict.listening
+              : dict.transcribing
+                ? "Transcribing…"
+                : dict.listening && dict.engine === "whisper"
+                ? `Recording ${fmtElapsed(dict.elapsed)}… tap ■ when you're done`
+                : dict.listening
                 ? "Listening… tap ■ when you're done"
                 : attachments.length
                   ? "Anything to add? (optional)"
@@ -258,18 +300,18 @@ export function Composer({
               void submit();
             }
           }}
-          disabled={busy}
+          disabled={busy || dict.transcribing}
         />
         <button
           className={`mic ${dict.listening ? "on" : ""}`}
-          onClick={toggleMic}
-          disabled={busy}
+          onClick={() => void toggleMic()}
+          disabled={busy || dict.transcribing}
           aria-label={dict.listening ? "Stop and send" : "Speak"}
           title={dict.supported ? (dict.listening ? "Stop and send" : "Tap and talk") : "Voice not supported here — use your keyboard's mic"}
         >
-          {dict.listening ? "■" : "🎙"}
+          {dict.transcribing ? <span className="spinner" /> : dict.listening ? "■" : "🎙"}
         </button>
-        <button className="send" onClick={() => void submit()} disabled={busy || (!text.trim() && !attachments.length)} aria-label="Send">
+        <button className="send" onClick={() => void submit()} disabled={busy || dict.transcribing || (!text.trim() && !attachments.length && !dict.listening)} aria-label="Send">
           {busy ? <span className="spinner" /> : "➤"}
         </button>
       </div>

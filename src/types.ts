@@ -153,6 +153,9 @@ export interface Settings {
   defaultSpace: Space;
   /** Speech recognition language. */
   speechLang: string;
+  /** Groq API key for Whisper dictation. Empty = use the browser's speech recognition. */
+  groqKey: string;
+  groqModel: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -168,4 +171,6 @@ export const DEFAULT_SETTINGS: Settings = {
   reviewBeforeSaving: true,
   defaultSpace: "work",
   speechLang: "en-US",
+  groqKey: "",
+  groqModel: "whisper-large-v3-turbo",
 };

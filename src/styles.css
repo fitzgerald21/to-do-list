@@ -422,3 +422,5 @@ body.is-dragging .toasts, body.is-dragging .toast { pointer-events: none; }
   .group-head:hover .group-actions, .group-head:focus-within .group-actions { display: flex; }
   .pew { display: none; }
 }
+.dict-error { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dict-error .btn { padding: 4px 10px; font-size: 13px; }
